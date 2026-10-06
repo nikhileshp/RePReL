@@ -53,6 +53,7 @@ def train(
     eval_rng: np.random.Generator | None = None,
     logger: TransitionLogger | None = None,
     on_eval: Callable[[TrainingPoint], None] | None = None,
+    max_idle_episodes: int = 100,
 ) -> list[TrainingPoint]:
     """Train for ``total_steps`` environment steps, evaluating every ``eval_every`` steps.
 
@@ -61,12 +62,18 @@ def train(
     """
     eval_rng = eval_rng if eval_rng is not None else np.random.default_rng(rng.integers(2**32))
     history: list[TrainingPoint] = []
-    steps, episode, next_eval = 0, 0, eval_every
+    steps, episode, next_eval, idle = 0, 0, eval_every, 0
     while steps < total_steps:
         epsilon = schedule.value(episode)
         result = runner.run_episode(rng, epsilon, learn=True, logger=logger)
         steps += result.env_steps
         episode += 1
+        idle = idle + 1 if result.env_steps == 0 else 0
+        if idle >= max_idle_episodes:
+            raise RuntimeError(
+                f"{idle} consecutive episodes with zero environment steps "
+                "(planning failures or goals satisfied at reset)"
+            )
         if steps >= next_eval or steps >= total_steps:
             point = TrainingPoint(
                 steps, episode, epsilon, evaluate(runner, eval_rng, eval_episodes, eval_epsilon)

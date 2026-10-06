@@ -29,7 +29,8 @@ class FlatExecutor:
         domain = self.domain
         state = initial_state if initial_state is not None else domain.reset(rng)
         episode = self.episode_counter
-        self.episode_counter += 1
+        if learn or logger is not None:
+            self.episode_counter += 1
         steps, env_return = 0, 0.0
         key = state.atoms
         while steps < domain.max_steps:

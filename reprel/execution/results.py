@@ -12,6 +12,7 @@ class EpisodeResult:
     success: bool
     subtask_failures: int = 0
     replans: int = 0
+    planning_failures: int = 0
     operators_run: tuple[str, ...] = field(default_factory=tuple)
 
 

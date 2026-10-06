@@ -64,7 +64,8 @@ class QLearningAgent(Agent):
         self, key: Hashable, action: int, reward: float, next_key: Hashable, *, terminal: bool
     ) -> None:
         row = self._row(key)
-        bootstrap = 0.0 if terminal else float(self._row(next_key).max())
+        next_row = None if terminal else self.q.get(next_key)
+        bootstrap = 0.0 if next_row is None else float(next_row.max())
         row[action] += self.alpha * (reward + self.gamma * bootstrap - row[action])
 
     def value(self, key: Hashable) -> float:

@@ -11,7 +11,7 @@ from reprel.agents.agent_pool import AgentPool
 from reprel.core.domain import Domain
 from reprel.core.state import State
 from reprel.logging.transitions import TransitionLogger, TransitionRecord
-from reprel.planning.operators import OperatorInstance
+from reprel.planning.operators import Goal, OperatorInstance
 from reprel.planning.planner import Planner, PlanningFailure
 
 from .results import EpisodeResult
@@ -62,8 +62,9 @@ class RePReLExecutor:
         state = initial_state if initial_state is not None else domain.reset(rng)
         goal = domain.goal(state)
         episode = self.episode_counter
-        self.episode_counter += 1
-        plan = self._plan(state, goal)
+        if learn or logger is not None:
+            self.episode_counter += 1
+        plan, planning_failures = self._plan(state, goal)
         steps, env_return, failures, replans = 0, 0.0, 0, 0
         run: list[str] = []
         idx = 0
@@ -84,7 +85,7 @@ class RePReLExecutor:
                 steps += 1
                 op_steps += 1
                 terminated = op.is_terminated(tr.next_state, signature=domain.predicates)
-                reward = op.subtask_reward(tr.reward, tr.next_state, signature=domain.predicates)
+                reward = tr.reward + (op.spec.terminal_reward if terminated else 0.0)
                 next_key = self.abstraction.abstract(tr.next_state, op)
                 if learn:
                     agent.update(key, action_idx, reward, next_key, terminal=terminated or tr.done)
@@ -107,15 +108,17 @@ class RePReLExecutor:
                 state, key = tr.next_state, next_key
                 if terminated:
                     idx += 1
-                    break
                 if tr.done or steps >= domain.max_steps:
-                    episode_over = True
+                    episode_over = True  # checked before moving on: never step a finished episode
+                    break
+                if terminated:
                     break
                 if cfg.max_operator_steps is not None and op_steps >= cfg.max_operator_steps:
                     failures += 1
                     if cfg.replan_on_timeout and replans < cfg.max_replans:
                         replans += 1
-                        plan = self._plan(state, goal)
+                        plan, failed = self._plan(state, goal)
+                        planning_failures += failed
                         idx = 0
                     else:
                         episode_over = True
@@ -126,11 +129,13 @@ class RePReLExecutor:
             success=domain.is_success(state),
             subtask_failures=failures,
             replans=replans,
+            planning_failures=planning_failures,
             operators_run=tuple(run),
         )
 
-    def _plan(self, state: State, goal: frozenset) -> list[OperatorInstance]:  # type: ignore[type-arg]
+    def _plan(self, state: State, goal: Goal) -> tuple[list[OperatorInstance], int]:
+        """Plan, or return an empty plan and a failure count of 1."""
         try:
-            return self.planner.plan(state, goal)
+            return self.planner.plan(state, goal), 0
         except PlanningFailure:
-            return []
+            return [], 1

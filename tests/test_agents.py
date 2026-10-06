@@ -102,3 +102,10 @@ def test_pool_creates_one_agent_per_operator_name_and_round_trips(tmp_path: obje
     assert isinstance(restored, QLearningAgent) and isinstance(original, QLearningAgent)
     assert np.array_equal(restored.q["k"], original.q["k"])
     assert other.total_keys == pool.total_keys == 1
+
+
+def test_update_does_not_create_a_row_for_the_next_key() -> None:
+    agent = QLearningAgent(n_actions=2, alpha=0.5, gamma=0.9)
+    agent.update("s", 0, 1.0, "unseen", terminal=False)
+    assert set(agent.q) == {"s"}
+    assert agent.q["s"][0] == pytest.approx(0.5)

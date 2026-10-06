@@ -4,6 +4,8 @@ import pytest
 from reprel.abstraction import make_abstraction
 from reprel.agents import AgentPool, ConstantSchedule, QLearningAgent, RandomAgent
 from reprel.core.atoms import Atom
+from reprel.core.domain import Transition
+from reprel.core.state import State
 from reprel.domains.taxi import TaxiConfig, TaxiDomain
 from reprel.domains.taxi_planning import make_taxi_planner
 from reprel.execution import (
@@ -16,6 +18,8 @@ from reprel.execution import (
     train,
 )
 from reprel.logging.transitions import TransitionLogger, read_transitions
+from reprel.planning.operators import Goal, OperatorInstance
+from reprel.planning.planner import Planner, PlanningFailure
 
 
 def make_executor(n: int = 1, layout: str = "five", **cfg: object) -> RePReLExecutor:
@@ -164,3 +168,92 @@ def test_evaluate_reports_steps_to_success_only_for_successes() -> None:
         assert res.mean_steps_to_success <= 200
     with pytest.raises(ValueError):
         evaluate(ex, np.random.default_rng(0), episodes=0, epsilon=0.0)
+
+
+# ------------------------------------------------------------------ review findings
+class DoneOnPickup(TaxiDomain):
+    """Environment that ends the episode as soon as a passenger boards."""
+
+    def step(self, state: State, action: str, rng: np.random.Generator) -> Transition:
+        tr = super().step(state, action, rng)
+        if len(tr.next_state.atoms_with("in")) > 0:
+            return type(tr)(tr.next_state, tr.reward, True, tr.info)
+        return tr
+
+
+class AlwaysPickup(RandomAgent):
+    def act(self, key, rng, epsilon):  # type: ignore[no-untyped-def]
+        return 4  # "pickup"
+
+
+def test_episode_stops_when_env_is_done_even_if_operators_remain() -> None:
+    dom = DoneOnPickup(TaxiConfig(num_passengers=2, layout="five", max_steps=500))
+    ex = RePReLExecutor(
+        dom,
+        make_taxi_planner(),
+        make_abstraction("none"),
+        AgentPool(lambda: AlwaysPickup(dom.n_actions)),
+    )
+    rng = np.random.default_rng(0)
+    s = ex.domain.reset(rng)
+    (p1_at,) = [a for a in s.atoms_with("at") if a.args[0] == "p1"]
+    (taxi_at,) = [a for a in s.atoms_with("at") if a.args[0] == "taxi"]
+    s = s.with_atoms(add=[Atom("at", ("taxi", p1_at.args[1]))], remove=[taxi_at])
+    res = ex.run_episode(rng, epsilon=0.0, learn=False, initial_state=s)
+    assert res.env_steps == 1
+    assert res.operators_run == ("pickup(p1)",)
+
+
+class FailingPlanner(Planner):
+    def plan(self, state: State, goal: Goal) -> list[OperatorInstance]:
+        raise PlanningFailure("nope")
+
+
+def test_planning_failure_is_counted_and_train_does_not_spin_forever() -> None:
+    dom = TaxiDomain(TaxiConfig(num_passengers=1, layout="five"))
+    ex = RePReLExecutor(
+        dom,
+        FailingPlanner(),
+        make_abstraction("none"),
+        AgentPool(lambda: RandomAgent(dom.n_actions)),
+    )
+    res = ex.run_episode(np.random.default_rng(0), epsilon=1.0, learn=False)
+    assert res.planning_failures == 1 and res.env_steps == 0
+    with pytest.raises(RuntimeError, match="zero"):
+        train(
+            ex,
+            np.random.default_rng(0),
+            total_steps=100,
+            eval_every=100,
+            eval_episodes=1,
+            eval_epsilon=0.0,
+            schedule=ConstantSchedule(0.1),
+        )
+
+
+def test_evaluation_does_not_advance_training_episode_ids() -> None:
+    ex = make_executor()
+    ex.pool = AgentPool(lambda: RandomAgent(ex.domain.n_actions))
+    before = ex.episode_counter
+    evaluate(ex, np.random.default_rng(0), episodes=3, epsilon=1.0)
+    assert ex.episode_counter == before
+    ex.run_episode(np.random.default_rng(0), epsilon=1.0, learn=True)
+    assert ex.episode_counter == before + 1
+
+
+def test_train_is_deterministic_for_a_seed() -> None:
+    def run() -> list[tuple[int, float]]:
+        ex = make_executor()
+        history = train(
+            ex,
+            np.random.default_rng(42),
+            total_steps=3_000,
+            eval_every=1_000,
+            eval_episodes=3,
+            eval_epsilon=0.0,
+            schedule=ConstantSchedule(0.3),
+        )
+        return [(p.env_steps, p.eval.return_mean) for p in history]
+
+    assert run() == run()
+    assert len(run()) >= 3

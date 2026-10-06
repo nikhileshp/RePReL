@@ -115,3 +115,31 @@ def test_run_metadata_records_config_git_and_seed(tmp_path: Path) -> None:
     assert meta["seed"] == 7 and "git_hash" in meta and "python" in meta and "numpy" in meta
     assert (tmp_path / "config.yaml").read_text().startswith("domain:")
     assert Atom.parse("at(taxi,l_0_0)")  # sanity: atoms import unaffected
+
+
+def test_logger_streams_row_groups_and_tolerates_double_close(tmp_path: Path) -> None:
+    import pyarrow.parquet as pq
+
+    dom = TaxiDomain(TaxiConfig(num_passengers=1))
+    s = dom.reset(np.random.default_rng(0))
+    path = tmp_path / "t.parquet"
+    logger = TransitionLogger(path, run_id="r", seed=0, chunk_size=2)
+    with logger:
+        for t in range(5):
+            logger.log(TransitionRecord(0, t, "pickup", ("p1",), s, "north", -0.1, False, s, False))
+        logger.close()
+    assert pq.ParquetFile(path).metadata.num_row_groups >= 2
+    assert len(read_transitions(path)) == 5
+
+
+def test_object_names_with_colons_round_trip(tmp_path: Path) -> None:
+    from reprel.core.atoms import Obj
+    from reprel.core.state import State
+
+    s = State(
+        frozenset({Atom.parse("at(a:1,l)")}), frozenset({Obj("a:1", "thing"), Obj("l", "loc")})
+    )
+    path = tmp_path / "t.jsonl"
+    with TransitionLogger(path, run_id="r", seed=0) as logger:
+        logger.log(TransitionRecord(0, 0, "op", (), s, "x", 0.0, False, s, False))
+    assert read_transitions(path)[0].state == s

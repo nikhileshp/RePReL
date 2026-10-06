@@ -73,7 +73,7 @@ class TransitionRecord:
 
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> TransitionRecord:
-        objects = frozenset(Obj(*item.split(":", 1)) for item in row["objects"])
+        objects = frozenset(Obj(*item.rsplit(":", 1)) for item in row["objects"])
         return cls(
             episode=int(row["episode"]),
             t=int(row["t"]),
@@ -91,32 +91,56 @@ class TransitionRecord:
 
 
 class TransitionLogger:
-    """Buffers rows in memory and writes them on :meth:`close` (or context-manager exit)."""
+    """Streams rows to disk: a Parquet row group (or JSONL flush) every ``chunk_size`` rows."""
 
-    def __init__(self, path: str | Path, run_id: str, seed: int) -> None:
+    def __init__(self, path: str | Path, run_id: str, seed: int, chunk_size: int = 50_000) -> None:
         self.path = Path(path)
         self.run_id = run_id
         self.seed = seed
+        self.chunk_size = chunk_size
         self._rows: list[dict[str, Any]] = []
+        self._writer: Any = None
+        self._closed = False
         self.count = 0
-
-    def log(self, record: TransitionRecord) -> None:
-        self._rows.append(record.to_row(self.run_id, self.seed))
-        self.count += 1
-
-    def close(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if self.path.suffix == ".jsonl":
-            with open(self.path, "w", encoding="utf-8") as fh:
-                for row in self._rows:
-                    fh.write(json.dumps(row) + "\n")
+            self._fh: Any = open(self.path, "w", encoding="utf-8")
         else:
-            import pyarrow as pa
             import pyarrow.parquet as pq
 
-            table = pa.Table.from_pylist(self._rows, schema=_schema())
-            pq.write_table(table, self.path, compression="zstd")
+            self._fh = None
+            self._writer = pq.ParquetWriter(self.path, _schema(), compression="zstd")
+
+    def log(self, record: TransitionRecord) -> None:
+        if self._closed:
+            raise RuntimeError("logger is closed")
+        self._rows.append(record.to_row(self.run_id, self.seed))
+        self.count += 1
+        if len(self._rows) >= self.chunk_size:
+            self._flush()
+
+    def _flush(self) -> None:
+        if not self._rows:
+            return
+        if self._fh is not None:
+            for row in self._rows:
+                self._fh.write(json.dumps(row) + "\n")
+            self._fh.flush()
+        else:
+            import pyarrow as pa
+
+            self._writer.write_table(pa.Table.from_pylist(self._rows, schema=_schema()))
         self._rows = []
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._flush()
+        if self._fh is not None:
+            self._fh.close()
+        else:
+            self._writer.close()
+        self._closed = True
 
     def __enter__(self) -> TransitionLogger:
         return self
