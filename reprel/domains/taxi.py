@@ -122,9 +122,7 @@ class TaxiDomain(Domain):
         return frozenset(Literal(Atom("delivered", (p,))) for p in passengers)
 
     def is_success(self, state: State) -> bool:
-        return all(
-            state.holds(Atom("delivered", (p,))) for p in state.objects_of_type("passenger")
-        )
+        return all(state.holds(Atom("delivered", (p,))) for p in state.objects_of_type("passenger"))
 
     # ------------------------------------------------------------------ dynamics
     @staticmethod

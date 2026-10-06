@@ -12,7 +12,8 @@ Status: under construction. See `plan/` for the design specification and milesto
 ```
 reprel/
   core/         atoms, immutable relational State, Domain interface + registry
-  domains/      Taxi (multi-passenger, relational); Office and Box World to follow
+  domains/      Taxi (multi-passenger, relational) + its HTN model; Office and Box World to follow
+  planning/     OperatorSpec / OperatorInstance, Planner interface, GTPyhop HTN wrapper
   seeding.py    seed_everything(seed) -> numpy Generator
 tests/
 plan/           design spec and milestone plans
@@ -39,4 +40,8 @@ state = dom.reset(rng)
 print(state.to_strings())
 t = dom.step(state, "north", rng)
 print(t.reward, t.done)
+
+from reprel.domains.taxi_planning import make_taxi_planner
+plan = make_taxi_planner().plan(state, dom.goal(state))
+print([str(op) for op in plan])  # ['pickup(p1)', 'drop(p1)', 'pickup(p2)', 'drop(p2)']
 ```
