@@ -1,0 +1,17 @@
+# Office World transfer (paper's "+T"): the same D-FOCI agents trained through the four tasks in
+# order: deliver mail -> deliver coffee -> deliver both -> visit a, b, c, d.
+name: office_transfer
+condition: reprel_dfoci
+domain: {name: office, task: deliver_mail, max_steps: 300}
+abstraction: {name: dfoci, spec: office}
+agent: {alpha: 0.1, gamma: 0.99, terminal_reward: 100.0}
+epsilon: {schedule: linear, start: 0.75, end: 0.01, episodes: 500}
+training: {total_steps: 200000, eval_every: 5000, eval_episodes: 20, eval_epsilon: 0.01}
+seeds: [0, 1, 2, 3, 4]
+transfer:
+  stages:
+    - {task: deliver_mail, total_steps: 200000}
+    - {task: deliver_coffee, total_steps: 200000}
+    - {task: deliver_both, total_steps: 200000}
+    - {task: visit_abcd, total_steps: 200000}
+output_dir: outputs
