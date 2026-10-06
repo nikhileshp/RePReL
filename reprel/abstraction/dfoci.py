@@ -39,7 +39,7 @@ from typing import Any
 
 import yaml
 
-from reprel.core.atoms import Atom, Literal, is_variable, unify
+from reprel.core.atoms import ANY_TYPE, Atom, Literal, is_variable, type_compatible, unify
 from reprel.core.query import Signature
 from reprel.core.state import State
 from reprel.planning.operators import OperatorInstance
@@ -47,6 +47,16 @@ from reprel.planning.operators import OperatorInstance
 from .abstraction import Abstraction, register_abstraction
 
 SOURCES = ("hand", "learned")
+TOP_KEYS = {"domain", "source", "types", "reward_parents", "statements", "operators"}
+STATEMENT_KEYS = {"operator", "if", "influences", "target"}
+OPERATOR_KEYS = {"reward_parents", "termination_parents"}
+_APART = "__"  # separator used to rename statement-local variables apart
+
+
+def _check_keys(data: Mapping[str, Any], allowed: set[str], where: str) -> None:
+    unknown = set(data) - allowed
+    if unknown:
+        raise ValueError(f"unknown key(s) {sorted(unknown)} in {where}; allowed: {sorted(allowed)}")
 
 
 def _parse_head(text: str) -> tuple[str, tuple[str, ...]]:
@@ -54,8 +64,28 @@ def _parse_head(text: str) -> tuple[str, tuple[str, ...]]:
     return atom.pred, atom.args
 
 
-def _lits(items: Iterable[str] | None) -> tuple[Literal, ...]:
-    return tuple(Literal.parse(t) for t in (items or ()))
+def _lits(items: Iterable[str] | None, where: str = "") -> tuple[Literal, ...]:
+    out = []
+    for text in items or ():
+        try:
+            out.append(Literal.parse(text))
+        except ValueError as exc:
+            raise ValueError(
+                f"{exc} in {where or 'literal list'}: atoms contain commas, so YAML lists must "
+                "use block style (one '- item' per line) or quote each atom"
+            ) from exc
+    return tuple(out)
+
+
+def _base_var(name: str) -> str:
+    """Original variable name, before apart-renaming (``L1__s0`` -> ``L1``)."""
+    return name.split(_APART, 1)[0]
+
+
+def _rename_apart(lit: Literal, roles: Mapping[str, str], tag: str) -> Literal:
+    """Map operator-argument variables to roles; every other variable becomes ``V__tag``."""
+    theta = {v: roles.get(v, f"{v}{_APART}{tag}") for v in lit.atom.variables()}
+    return lit.substitute(theta)
 
 
 @dataclass(frozen=True)
@@ -68,6 +98,7 @@ class Statement:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> Statement:
+        _check_keys(data, STATEMENT_KEYS, f"statement {data!r}")
         if "target" not in data or "influences" not in data:
             raise ValueError(f"statement needs 'influences' and 'target': {data!r}")
         operator: str | None = None
@@ -75,11 +106,11 @@ class Statement:
         if data.get("operator"):
             operator, args = _parse_head(data["operator"])
         return cls(
-            influences=_lits(data["influences"]),
+            influences=_lits(data["influences"], "influences"),
             target=Literal.parse(data["target"]),
             operator=operator,
             operator_args=args,
-            context=_lits(data.get("if")),
+            context=_lits(data.get("if"), "if"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -112,6 +143,7 @@ class DFOCISpec:
     # ------------------------------------------------------------------ I/O
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> DFOCISpec:
+        _check_keys(data, TOP_KEYS, "D-FOCI spec")
         source = data.get("source", "hand")
         if source not in SOURCES:
             raise ValueError(f"source must be one of {SOURCES}, got {source!r}")
@@ -119,16 +151,19 @@ class DFOCISpec:
         for head, parents in (data.get("operators") or {}).items():
             name, args = _parse_head(head)
             parents = parents or {}
+            _check_keys(parents, OPERATOR_KEYS, f"operators[{head}]")
             operators[name] = OperatorParents(
                 args=args,
-                reward_parents=_lits(parents.get("reward_parents")),
-                termination_parents=_lits(parents.get("termination_parents")),
+                reward_parents=_lits(parents.get("reward_parents"), f"{head}.reward_parents"),
+                termination_parents=_lits(
+                    parents.get("termination_parents"), f"{head}.termination_parents"
+                ),
             )
         return cls(
             domain=str(data.get("domain", "")),
             statements=tuple(Statement.from_dict(s) for s in data.get("statements") or ()),
             operators=operators,
-            reward_parents=_lits(data.get("reward_parents")),
+            reward_parents=_lits(data.get("reward_parents"), "reward_parents"),
             types=dict(data.get("types") or {}),
             source=source,
         )
@@ -158,35 +193,47 @@ class DFOCISpec:
         with open(path, "w", encoding="utf-8") as fh:
             yaml.safe_dump(self.to_dict(), fh, sort_keys=False)
 
+    def variable_type(self, name: str) -> str | None:
+        """Declared type of a (possibly apart-renamed) variable, if any."""
+        return self.types.get(_base_var(name))
+
     # ------------------------------------------------------------------ closure
     def relevant_literals(
         self, operator: str, roles: Sequence[str] | None = None, max_depth: int | None = None
     ) -> frozenset[Literal]:
         """Ancestor closure of the operator's reward/termination parents (plus global R parents).
 
-        Statement variables that name operator arguments are renamed to ``roles``
-        (positionally); all other variables stay statement-local existentials.
+        Variables naming operator arguments are renamed to ``roles`` (positionally; the
+        operator header's own names when ``roles`` is None). Every other variable is
+        existential and renamed apart per statement (``L1`` -> ``L1__s3``) so that a
+        statement-local name can never be captured by a role or by another statement.
         """
         if operator not in self.operators:
             raise KeyError(f"no D-FOCI parents for operator {operator!r}")
         parents = self.operators[operator]
-        rename = self._renaming(parents.args, roles)
-        relevant: set[Literal] = {lit.substitute(rename) for lit in self.reward_parents}
-        relevant |= {lit.substitute(rename) for lit in parents.reward_parents}
-        relevant |= {lit.substitute(rename) for lit in parents.termination_parents}
-        applicable = [
-            (s, self._renaming(s.operator_args, roles if roles else parents.args))
-            for s in self.statements
-            if s.operator is None or s.operator == operator
-        ]
+        role_names = tuple(roles) if roles else parents.args
+        if len(role_names) != len(parents.args):
+            raise ValueError(f"operator args {parents.args} do not match roles {role_names}")
+        op_roles = dict(zip(parents.args, role_names, strict=True))
+        relevant: set[Literal] = {_rename_apart(lit, {}, "r") for lit in self.reward_parents}
+        relevant |= {_rename_apart(lit, op_roles, "o") for lit in parents.reward_parents}
+        relevant |= {_rename_apart(lit, op_roles, "o") for lit in parents.termination_parents}
+        applicable: list[tuple[Statement, dict[str, str], str]] = []
+        for i, s in enumerate(self.statements):
+            if s.operator is None:
+                applicable.append((s, {}, f"s{i}"))
+            elif s.operator == operator:
+                if len(s.operator_args) != len(role_names):
+                    raise ValueError(f"statement {s} args do not match operator {operator}")
+                applicable.append((s, dict(zip(s.operator_args, role_names, strict=True)), f"s{i}"))
         depth = 0
         while max_depth is None or depth < max_depth:
             added: set[Literal] = set()
-            for statement, theta in applicable:
-                target = statement.target.substitute(theta)
+            for statement, stmt_roles, tag in applicable:
+                target = _rename_apart(statement.target, stmt_roles, tag)
                 if any(_compatible(target.atom, lit.atom) for lit in relevant):
                     for lit in (*statement.influences, *statement.context):
-                        renamed = lit.substitute(theta)
+                        renamed = _rename_apart(lit, stmt_roles, tag)
                         if renamed not in relevant:
                             added.add(renamed)
             if not added:
@@ -194,14 +241,6 @@ class DFOCISpec:
             relevant |= added
             depth += 1
         return frozenset(relevant)
-
-    @staticmethod
-    def _renaming(args: Sequence[str], roles: Sequence[str] | None) -> dict[str, str]:
-        if not roles or not args:
-            return {}
-        if len(args) != len(roles):
-            raise ValueError(f"operator args {args} do not match roles {tuple(roles)}")
-        return dict(zip(args, roles, strict=True))
 
 
 def _compatible(a: Atom, b: Atom) -> bool:
@@ -221,6 +260,15 @@ def load_dfoci(name: str) -> DFOCISpec:
     resource = resources.files("reprel.dfoci").joinpath(f"{name}.yaml")
     with resources.as_file(resource) as p:
         return DFOCISpec.from_yaml(p)
+
+
+@dataclass(frozen=True)
+class _Pattern:
+    """A relevant literal prepared for projection under one operator's roles."""
+
+    atom: Atom  # roles left as variables; existentials canonical V0, V1..
+    var_types: tuple[tuple[str, str], ...]  # (variable, required type) for typed existentials
+    simple: bool  # all args are distinct variables -> type filter suffices
 
 
 @register_abstraction("dfoci")
@@ -244,6 +292,7 @@ class DFOCIAbstraction(Abstraction):
         self.signature = signature
         self.max_depth = max_depth
         self._relevant: dict[tuple[str, tuple[str, ...]], frozenset[Literal]] = {}
+        self._patterns: dict[tuple[str, tuple[str, ...]], tuple[_Pattern, ...]] = {}
 
     def relevant(self, op: OperatorInstance) -> frozenset[Literal]:
         key = (op.name, op.spec.roles)
@@ -253,6 +302,32 @@ class DFOCIAbstraction(Abstraction):
             )
         return self._relevant[key]
 
+    def patterns(self, op: OperatorInstance) -> tuple[_Pattern, ...]:
+        """Deduplicated projection patterns for the operator (cached per operator name)."""
+        key = (op.name, op.spec.roles)
+        if key not in self._patterns:
+            roles = set(op.spec.roles)
+            unique: dict[tuple[Atom, tuple[tuple[str, str], ...]], _Pattern] = {}
+            for lit in self.relevant(op):
+                canon: dict[str, str] = {}
+                var_types: list[tuple[str, str]] = []
+                for v in lit.atom.variables():
+                    if v in roles:
+                        continue
+                    canon[v] = f"V{len(canon)}"
+                    declared = self.spec.variable_type(v)
+                    if declared is not None:
+                        var_types.append((canon[v], declared))
+                atom = lit.atom.substitute(canon)
+                simple = all(is_variable(a) for a in atom.args) and len(set(atom.args)) == len(
+                    atom.args
+                )
+                unique.setdefault(
+                    (atom, tuple(var_types)), _Pattern(atom, tuple(var_types), simple)
+                )
+            self._patterns[key] = tuple(unique.values())
+        return self._patterns[key]
+
     def abstract(self, state: State, op: OperatorInstance) -> Hashable:
         return self.project(state, op)
 
@@ -260,24 +335,29 @@ class DFOCIAbstraction(Abstraction):
         """The lifted relevant atoms (same as :meth:`abstract`, with a precise type)."""
         binding = op.binding
         types = state.types()
-        var_types = dict(self.spec.types)
-        for role in binding:
-            var_types.pop(role, None)
         kept: set[Atom] = set()
-        for lit in self.relevant(op):
-            if not lit.positive:
+        for pattern in self.patterns(op):
+            bound = pattern.atom.substitute(binding)
+            candidates = state.atoms_with(bound.pred)
+            if not candidates:
                 continue
-            pattern = lit.atom.substitute(binding)
-            for atom in state.atoms_with(pattern.pred):
-                theta = unify(pattern, atom, types=types, signature=self.signature)
-                if theta is None:
-                    continue
-                if all(
-                    types.get(theta[v]) == var_types[v]
-                    for v in pattern.variables()
-                    if v in var_types
+            if pattern.simple and not binding:
+                positions = [(bound.args.index(v), t) for v, t in pattern.var_types]
+                kept.update(
+                    atom
+                    for atom in candidates
+                    if len(atom.args) == len(bound.args)
+                    and all(
+                        type_compatible(types.get(atom.args[i], ANY_TYPE), t) for i, t in positions
+                    )
+                )
+                continue
+            for atom in candidates:
+                theta = unify(bound, atom, types=types, signature=self.signature)
+                if theta is not None and all(
+                    type_compatible(types.get(theta[v], ANY_TYPE), t) for v, t in pattern.var_types
                 ):
                     kept.add(atom)
-        return frozenset(
-            a.substitute({obj: f"?{role}" for role, obj in binding.items()}) for a in kept
-        )
+        lift = {obj: f"?{role}" for role, obj in binding.items()}
+        objs = set(lift)
+        return frozenset(a.substitute(lift) if objs.intersection(a.args) else a for a in kept)

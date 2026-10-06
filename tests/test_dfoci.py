@@ -7,10 +7,21 @@ from reprel.core.atoms import Atom, Literal, Obj
 from reprel.core.state import State
 from reprel.domains.taxi import TaxiConfig, TaxiDomain
 from reprel.domains.taxi_planning import DROP, PICKUP
+from reprel.planning.operators import OperatorSpec
 
 
 def preds(literals: frozenset[Literal]) -> set[str]:
     return {lit.atom.pred for lit in literals}
+
+
+def shapes(literals: frozenset[Literal]) -> set[str]:
+    """Literals with apart-renaming suffixes stripped: ``at(taxi,L1__s0)`` -> ``at(taxi,L1)``."""
+    return {_strip(lit) for lit in literals}
+
+
+def _strip(lit: Literal) -> str:
+    atom = Atom(lit.atom.pred, tuple(a.split("__", 1)[0] for a in lit.atom.args))
+    return str(atom) if lit.positive else f"not {atom}"
 
 
 # ------------------------------------------------------------------ spec loading
@@ -46,16 +57,14 @@ def test_taxi_pickup_closure_matches_paper_table_1() -> None:
     spec = load_dfoci("taxi")
     relevant = spec.relevant_literals("pickup")
     assert preds(relevant) == {"at", "in", "wall", "move"}
-    assert Literal.parse("at(P,L)") in relevant
-    assert Literal.parse("in(P,taxi)") in relevant
-    assert Literal.parse("at(taxi,L1)") in relevant
+    assert {"at(P,L)", "in(P,taxi)", "at(taxi,L1)", "wall(L1,Dir)", "move(Dir)"} <= shapes(relevant)
     assert "dest" not in preds(relevant) and "delivered" not in preds(relevant)
 
 
 def test_taxi_drop_closure_matches_paper_table_1() -> None:
     relevant = load_dfoci("taxi").relevant_literals("drop")
     assert preds(relevant) == {"at", "in", "dest", "delivered", "wall", "move"}
-    assert Literal.parse("at(P,L)") not in relevant  # passenger pickup spot is irrelevant
+    assert "at(P,L)" not in shapes(relevant)  # passenger pickup spot is irrelevant
 
 
 def test_closure_follows_chains_and_if_contexts() -> None:
@@ -93,9 +102,7 @@ def test_closure_renames_statement_args_to_operator_roles() -> None:
             "operators": {"op(X)": {"reward_parents": ["a(X)"], "termination_parents": []}},
         }
     )
-    assert spec.relevant_literals("op", roles=("P",)) == frozenset(
-        {Literal.parse("a(P)"), Literal.parse("b(P)")}
-    )
+    assert shapes(spec.relevant_literals("op", roles=("P",))) == {"a(P)", "b(P)"}
 
 
 def test_unknown_operator_raises() -> None:
@@ -179,7 +186,7 @@ def test_projection_respects_variable_types() -> None:
     spec_typed = DFOCISpec.from_dict(
         {**spec.to_dict(), "types": {"X": "passenger", "Y": "passenger"}}
     )
-    op = __import__("reprel.planning.operators", fromlist=["OperatorSpec"]).OperatorSpec(
+    op = OperatorSpec(
         name="op", params=(("X", "passenger"),), preconditions=(), add=(), delete=(), termination=()
     )
     assert DFOCIAbstraction(spec, signature=sig).abstract(s, op.instantiate(("p1",))) == frozenset(
@@ -196,3 +203,97 @@ def test_make_abstraction_from_registry_with_spec_name() -> None:
     assert isinstance(abstraction, DFOCIAbstraction)
     key = abstraction.project(s, PICKUP.instantiate(("p1",)))
     assert any(a.pred == "wall" for a in key)
+
+
+# ------------------------------------------------------------------ review findings
+def toy_objects() -> frozenset[Obj]:
+    return frozenset(
+        {
+            Obj("p1", "passenger"),
+            Obj("p2", "passenger"),
+            Obj("taxi", "taxi"),
+            Obj("la", "location"),
+            Obj("lb", "location"),
+        }
+    )
+
+
+def toy_op(role: str = "P") -> OperatorSpec:
+    return OperatorSpec(
+        name="op",
+        params=((role, "passenger"),),
+        preconditions=(),
+        add=(),
+        delete=(),
+        termination=(),
+    )
+
+
+def test_statement_local_variable_named_like_a_role_is_not_captured() -> None:
+    # Unconditional statement: *any* passenger's location influences the taxi; must not
+    # collapse to the operator's own passenger when the statement happens to use the name P.
+    spec = DFOCISpec.from_dict(
+        {
+            "domain": "toy",
+            "types": {"P": "passenger"},
+            "reward_parents": ["at(taxi,L)"],
+            "statements": [{"influences": ["at(P,L1)"], "target": "at(taxi,L2)"}],
+            "operators": {"op(X)": {"reward_parents": [], "termination_parents": []}},
+        }
+    )
+    s = State(
+        frozenset(Atom.parse(a) for a in ["at(p1,la)", "at(p2,lb)", "at(taxi,la)"]), toy_objects()
+    )
+    key = DFOCIAbstraction(spec, signature={"at": ("object", "location")}).project(
+        s, toy_op("P").instantiate(("p1",))
+    )
+    assert key == frozenset(Atom.parse(a) for a in ["at(?P,la)", "at(p2,lb)", "at(taxi,la)"])
+
+
+def test_negative_parent_literal_still_projects_its_atom() -> None:
+    spec = DFOCISpec.from_dict(
+        {
+            "domain": "toy",
+            "statements": [],
+            "operators": {
+                "op(P)": {"reward_parents": ["not in(P,taxi)"], "termination_parents": []}
+            },
+        }
+    )
+    s = State(frozenset({Atom.parse("in(p1,taxi)"), Atom.parse("at(p2,lb)")}), toy_objects())
+    key = DFOCIAbstraction(spec).project(s, toy_op().instantiate(("p1",)))
+    assert key == frozenset({Atom.parse("in(?P,taxi)")})
+
+
+def test_unknown_yaml_keys_are_rejected() -> None:
+    base = load_dfoci("taxi").to_dict()
+    bad = {**base, "statments": base["statements"]}
+    with pytest.raises(ValueError, match="statments"):
+        DFOCISpec.from_dict(bad)
+    bad_stmt = {**base, "statements": [{"influence": ["a()"], "target": "b()"}]}
+    with pytest.raises(ValueError, match="influence"):
+        DFOCISpec.from_dict(bad_stmt)
+    bad_op = {**base, "operators": {"pickup(P)": {"termination_parent": ["in(P,taxi)"]}}}
+    with pytest.raises(ValueError, match="termination_parent"):
+        DFOCISpec.from_dict(bad_op)
+
+
+def test_flow_list_split_atoms_give_a_helpful_error() -> None:
+    with pytest.raises(ValueError, match="block"):
+        DFOCISpec.from_dict({"domain": "x", "reward_parents": ["at(taxi", "L1)"]})
+
+
+def test_variable_type_object_matches_any_object() -> None:
+    spec = DFOCISpec.from_dict(
+        {
+            "domain": "toy",
+            "types": {"Y": "object"},
+            "statements": [],
+            "operators": {"op(P)": {"reward_parents": ["at(Y,L)"], "termination_parents": []}},
+        }
+    )
+    s = State(frozenset({Atom.parse("at(p1,la)"), Atom.parse("at(taxi,lb)")}), toy_objects())
+    key = DFOCIAbstraction(spec, signature={"at": ("object", "location")}).project(
+        s, toy_op().instantiate(("p2",))
+    )
+    assert key == frozenset({Atom.parse("at(p1,la)"), Atom.parse("at(taxi,lb)")})

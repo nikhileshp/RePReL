@@ -196,21 +196,41 @@ ABSTRACTIONS = {"none": NoAbstraction, "dfoci": DFOCIAbstraction}
 ```yaml
 domain: taxi
 source: hand                    # hand | learned
-reward_parents: [at(T,L1), move(Dir), wall(L1,Dir)]       # global R
+types: {P: passenger, L: location, L1: location, L2: location, Dir: dir}
+reward_parents:                 # global R parents (block lists: atoms contain commas)
+  - at(taxi,L1)
+  - move(Dir)
+  - wall(L1,Dir)
 statements:
-  - influences: [at(T,L1), move(Dir), wall(L1,Dir)]
-    target: at(T,L2)
+  - influences:
+      - at(taxi,L1)
+      - move(Dir)
+      - wall(L1,Dir)
+    target: at(taxi,L2)
   - operator: pickup(P)
     if: []
-    influences: [at(T,L1), at(P,L), in(P,T)]
-    target: in(P,T)
+    influences:
+      - at(taxi,L1)
+      - at(P,L)
+      - in(P,taxi)
+    target: in(P,taxi)
   - operator: drop(P)
-    influences: [at(T,L1), in(P,T), dest(P,L), delivered(P)]
+    influences:
+      - at(taxi,L1)
+      - in(P,taxi)
+      - dest(P,L)
+      - delivered(P)
     target: delivered(P)
 operators:
-  pickup(P): {reward_parents: [in(P,T)], termination_parents: [in(P,T)]}
-  drop(P):   {reward_parents: [delivered(P)], termination_parents: [delivered(P)]}
+  pickup(P):
+    reward_parents: [in(P,taxi)]        # single-atom flow lists are fine
+    termination_parents: [in(P,taxi)]
+  drop(P):
+    reward_parents: [delivered(P)]
+    termination_parents: [delivered(P)]
 ```
+Unknown keys are rejected. Statement-local variables are renamed apart from operator roles
+during the closure, so a statement that happens to use a role's name is still existential.
 
 - Closure: for operator `o`, start from global reward parents ∪ `o`'s reward and termination
   parents; repeatedly add `influences` ∪ `if` of every statement (unconditional or tagged `o`)
