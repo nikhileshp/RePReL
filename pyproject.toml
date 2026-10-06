@@ -7,6 +7,7 @@ requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Nikhilesh Prabhakar", email = "prabhakar.nikhilesh@gmail.com" }]
 dependencies = [
+    "gtpyhop>=2.0.2",
     "numpy>=1.26",
     "pyyaml>=6.0",
 ]

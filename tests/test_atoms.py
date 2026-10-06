@@ -77,9 +77,10 @@ def test_unify_binds_same_variable_consistently() -> None:
 def test_unify_checks_types_from_signature() -> None:
     signature = {"at": ("passenger", "location")}
     types = {"p1": "passenger", "taxi": "taxi", "l_0_0": "location"}
-    assert unify(
-        Atom.parse("at(P,L)"), Atom.parse("at(taxi,l_0_0)"), signature=signature, types=types
-    ) is None
+    assert (
+        unify(Atom.parse("at(P,L)"), Atom.parse("at(taxi,l_0_0)"), signature=signature, types=types)
+        is None
+    )
     assert unify(
         Atom.parse("at(P,L)"), Atom.parse("at(p1,l_0_0)"), signature=signature, types=types
     ) == {"P": "p1", "L": "l_0_0"}
