@@ -1,0 +1,12 @@
+# Taxi, experiment condition "flat". Override the task size with --set domain.num_passengers=N
+name: taxi_p1
+condition: flat
+domain: {name: taxi, num_passengers: 1, layout: eight, max_steps: 1000}
+abstraction: {name: dfoci, spec: taxi}
+agent: {alpha: 0.01, gamma: 0.99, terminal_reward: 10.0}
+epsilon: {schedule: linear, start: 0.75, end: 0.01, episodes: 2000}
+executor: {max_operator_steps: null, replan_on_timeout: true, max_replans: 10}
+training: {total_steps: 1000000, eval_every: 20000, eval_episodes: 20, eval_epsilon: 0.01}
+logging: {transitions: false}
+seeds: [0, 1, 2, 3, 4]
+output_dir: outputs

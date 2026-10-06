@@ -105,8 +105,8 @@ def test_metrics_logger_writes_csv_rows(tmp_path: Path) -> None:
             epsilon=0.6,
         )
     lines = path.read_text().splitlines()
-    assert lines[0].split(",")[:3] == ["condition", "seed", "env_steps"]
-    assert len(lines) == 3 and lines[2].startswith("reprel_dfoci,0,2000")
+    assert lines[0].split(",")[:4] == ["condition", "seed", "stage", "env_steps"]
+    assert len(lines) == 3 and lines[2].startswith("reprel_dfoci,0,,2000")
 
 
 def test_run_metadata_records_config_git_and_seed(tmp_path: Path) -> None:

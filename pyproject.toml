@@ -8,6 +8,7 @@ license = { text = "MIT" }
 authors = [{ name = "Nikhilesh Prabhakar", email = "prabhakar.nikhilesh@gmail.com" }]
 dependencies = [
     "gtpyhop>=2.0.2",
+    "matplotlib>=3.11.2",
     "numpy>=1.26",
     "pandas>=3.0.6",
     "pyarrow>=25.0.1",

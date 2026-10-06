@@ -1,0 +1,7 @@
+# Exploration-only data collection for structure learning (M7): random actions inside each
+# planned subtask, bounded per operator so data is spread across pickup and drop.
+name: taxi_explore
+domain: {name: taxi, num_passengers: 2, layout: eight, max_steps: 1000}
+explore: {episodes: 200, max_operator_steps: 50}
+seeds: [0]
+output_dir: outputs
