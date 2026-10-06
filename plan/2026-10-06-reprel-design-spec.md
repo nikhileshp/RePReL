@@ -12,7 +12,7 @@ exploration transitions. The interfaces must let (a) learned abstractions and (b
 settings drop in without touching other modules, but neither is built now.
 
 Success criteria for M5: on Taxi, learning curves (mean ± std over ≥ 5 seeds, return and
-success rate vs. environment steps) show D-FOCI RePReL > identity RePReL > flat Q-learning in
+success rate vs. environment steps) show D-FOCI RePReL > no-abstraction RePReL > flat Q-learning in
 sample efficiency, and D-FOCI RePReL trained on 1–2 passengers transfers to 3–5 passengers.
 Anything that contradicts the paper is reported, not tuned away.
 
@@ -45,7 +45,7 @@ reprel/
     htn_gtpyhop.py    GTPyhopPlanner: builds a gtpyhop.Domain from OperatorSpecs + method callables
   abstraction/
     abstraction.py    Abstraction ABC + registry
-    identity.py       IdentityAbstraction
+    none.py           NoAbstraction (full ground state; the "no abstraction" baseline)
     dfoci.py          DFOCISpec (YAML I/O, validation), closure, DFOCIAbstraction
   agents/
     schedules.py      EpsilonSchedule (linear-per-episode, constant)
@@ -60,7 +60,7 @@ reprel/
     transitions.py    TransitionRecord, TransitionLogger (Parquet; JSONL fallback), reader
     metrics.py        MetricsLogger (CSV), RunMetadata (config, git hash, seed, env info)
   structure/          M7: ndr_adapter.py, compare.py
-  configs/            YAML experiment configs (taxi_flat.yaml, taxi_reprel_identity.yaml,
+  configs/            YAML experiment configs (taxi_flat.yaml, taxi_reprel_none.yaml,
                       taxi_reprel_dfoci.yaml, taxi_transfer.yaml, taxi_explore.yaml)
   dfoci/              taxi.yaml (hand), later office.yaml, boxworld.yaml
   scripts/            run.py, explore.py, plot.py, sweep.py (multi-seed launcher)
@@ -186,10 +186,10 @@ Planner tests check plan validity by simulating the operators' add/delete effect
 ```python
 class Abstraction(ABC):
     def abstract(self, state: State, op: OperatorInstance) -> Hashable
-ABSTRACTIONS = {"identity": IdentityAbstraction, "dfoci": DFOCIAbstraction}
+ABSTRACTIONS = {"none": NoAbstraction, "dfoci": DFOCIAbstraction}
 ```
 
-- `IdentityAbstraction(include_binding=False)`: key = `state.atoms` (faithful to the original
+- `NoAbstraction(include_binding=False)`: key = `state.atoms` (faithful to the original
   "trl"/no-abstraction baseline); with `include_binding=True` the operator binding is appended.
 - `DFOCISpec` (YAML):
 
@@ -254,7 +254,7 @@ failure handling:
    `eval_epsilon`; record mean return, success rate, mean steps-to-success.
 
 `ExplorationCollector` reuses the same loop with a uniform-random policy and no learning, writes
-transitions per operator (input to M7). `FlatExecutor` runs one agent on `IdentityAbstraction`
+transitions per operator (input to M7). `FlatExecutor` runs one agent on `NoAbstraction`
 keys with the raw environment reward and the same evaluation hook.
 
 ## 8. Logging and reproducibility (`reprel/logging`, `reprel/seeding.py`)
@@ -285,8 +285,8 @@ eval cadence, operator step budget), `logging` (transitions on/off), `seeds` (li
 
 | Condition | Executor | Abstraction | Reward to learner |
 |---|---|---|---|
-| flat | FlatExecutor | identity | env reward |
-| reprel_identity | RePReLExecutor | identity | env reward + tR per operator |
+| flat | FlatExecutor | none | env reward |
+| reprel_none | RePReLExecutor | none | env reward + tR per operator |
 | reprel_dfoci | RePReLExecutor | dfoci (`reprel/dfoci/taxi.yaml`) | same |
 | transfer | RePReLExecutor | dfoci | train on 1 then 2 passengers, then evaluate + continue on 3, 4, 5 without reset |
 
@@ -300,7 +300,7 @@ reward scale (proposed 10, i.e. the pickup reward; the original used 1 at reward
 semantics, rewards, termination, instance generation determinism per seed), `test_planner.py`
 (plans valid for 1–5 passengers, including a passenger already in the taxi), `test_dfoci.py`
 (closure on the Taxi YAML and on a synthetic fuel spec; key equality across instances differing
-only in irrelevant passengers; `if:` clauses included), `test_identity.py`, `test_q_learning.py`
+only in irrelevant passengers; `if:` clauses included), `test_none_abstraction.py`, `test_q_learning.py`
 (converges on a 5-state chain MDP), `test_executor.py` (terminates, skips satisfied operators,
 replans on timeout), `test_transitions.py` (write → read → identical States),
 `test_config.py` (YAML round trip + overrides).
