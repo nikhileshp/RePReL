@@ -1,0 +1,54 @@
+# D-FOCI statements for the Taxi domain, transcribed from Kokel et al. (ICAPS 2021), Table 1.
+# Differences from the paper's notation: the taxi is the constant object `taxi`
+# (paper: taxi-at(L)), `delivered(P)` is the paper's at-dest(P), and movement is made explicit
+# through static wall(L,Dir) atoms so the first statement is complete.
+# As in the paper, the step reward R is modelled as depending only on the taxi's movement;
+# pickup/drop rewards that depend on other passengers' positions are deliberately ignored
+# (that is the approximation the abstraction makes).
+domain: taxi
+source: hand
+types:
+  P: passenger
+  L: location
+  L1: location
+  L2: location
+  Dir: dir
+
+reward_parents:
+  - at(taxi,L1)
+  - move(Dir)
+  - wall(L1,Dir)
+
+statements:
+  - influences:
+      - at(taxi,L1)
+      - move(Dir)
+      - wall(L1,Dir)
+    target: at(taxi,L2)
+
+  - operator: pickup(P)
+    influences:
+      - at(taxi,L1)
+      - at(P,L)
+      - in(P,taxi)
+    target: in(P,taxi)
+
+  - operator: drop(P)
+    influences:
+      - at(taxi,L1)
+      - in(P,taxi)
+      - dest(P,L)
+      - delivered(P)
+    target: delivered(P)
+
+operators:
+  pickup(P):
+    reward_parents:
+      - in(P,taxi)
+    termination_parents:
+      - in(P,taxi)
+  drop(P):
+    reward_parents:
+      - delivered(P)
+    termination_parents:
+      - delivered(P)
