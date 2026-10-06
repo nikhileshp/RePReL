@@ -6,10 +6,11 @@ from dataclasses import replace
 
 from reprel.core.atoms import Atom, Literal
 from reprel.core.state import State
+from reprel.execution.options import ReachOption
 from reprel.planning.htn_gtpyhop import GTPyhopPlanner, Method, Task
-from reprel.planning.operators import Goal, OperatorSpec
+from reprel.planning.operators import Goal, OperatorInstance, OperatorSpec
 
-from .taxi import TAXI, TaxiDomain, passenger_order
+from .taxi import TAXI, TaxiDomain, loc_name, passenger_order
 
 
 def _lits(*texts: str) -> tuple[Literal, ...]:
@@ -92,3 +93,22 @@ def make_taxi_planner(terminal_reward: float = 1.0) -> GTPyhopPlanner:
         signature=TaxiDomain.predicates,
         name="taxi",
     )
+
+
+# ------------------------------------------------------------------ option baselines
+def taxi_reach_options(domain: TaxiDomain, terminal_reward: float) -> tuple[ReachOption, ...]:
+    """One ``reach(depot)`` option per depot location (the paper's 4 options R, G, B, Y)."""
+    return tuple(
+        ReachOption(f"reach({loc_name(cell)})", Atom("at", (TAXI, loc_name(cell))), terminal_reward)
+        for _, cell in sorted(domain.grid.depots.items())
+    )
+
+
+def taxi_operator_target(op: OperatorInstance, state: State) -> str:
+    """Location an operator drives to: the passenger's depot for pickup, destination for drop."""
+    p = op.args[0]
+    pred = "at" if op.name == "pickup" else "dest"
+    for atom in state.atoms_with(pred):
+        if atom.args[0] == p:
+            return atom.args[1]
+    raise ValueError(f"no {pred} atom for {p} in state")

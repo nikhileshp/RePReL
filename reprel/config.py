@@ -10,7 +10,7 @@ from typing import Any
 
 import yaml
 
-CONDITIONS = ("flat", "reprel_none", "reprel_dfoci")
+CONDITIONS = ("flat", "reprel_none", "reprel_dfoci", "trl", "hrl")
 TOP_KEYS = {
     "name",
     "condition",

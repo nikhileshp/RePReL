@@ -237,3 +237,13 @@ transfer:
     stage0_last = [r for r in rows if r["stage"] == "0"][-1]
     stage1_first = [r for r in rows if r["stage"] == "1"][0]
     assert float(stage1_first["epsilon"]) <= float(stage0_last["epsilon"]) < 1.0
+
+
+def test_run_script_supports_trl_and_hrl(tmp_path: Path) -> None:
+    out = tmp_path / "out"
+    for condition in ("trl", "hrl"):
+        code = run_script.main(
+            ["--config", str(write(tmp_path, condition)), "--out", str(out), "--seed", "0"]
+        )
+        assert code == 0
+        assert (out / "smoke" / condition / "seed_0" / "metrics.csv").exists()

@@ -16,7 +16,14 @@ from reprel.agents import (
 )
 from reprel.config import RunConfig
 from reprel.core.domain import Domain, make_domain
-from reprel.execution import EpisodeRunner, ExecutorConfig, FlatExecutor, RePReLExecutor
+from reprel.execution import (
+    EpisodeRunner,
+    ExecutorConfig,
+    FlatExecutor,
+    HRLExecutor,
+    RePReLExecutor,
+    TRLExecutor,
+)
 from reprel.planning.planner import Planner
 
 
@@ -54,6 +61,21 @@ def build_runner(
         pool = pool or build_pool(cfg, domain)
         return FlatExecutor(domain, pool.get("flat")), pool
     pool = pool or build_pool(cfg, domain)
+    if cfg.condition in ("trl", "hrl"):
+        if cfg.domain.name != "taxi":
+            raise ValueError(f"no option baselines for domain {cfg.domain.name!r}")
+        from reprel.domains.taxi import TaxiDomain
+        from reprel.domains.taxi_planning import taxi_operator_target, taxi_reach_options
+
+        assert isinstance(domain, TaxiDomain)
+        options = taxi_reach_options(domain, cfg.agent.terminal_reward)
+        if cfg.condition == "trl":
+            return TRLExecutor(
+                domain, planner or build_planner(cfg), options, taxi_operator_target, pool
+            ), pool
+        return HRLExecutor(
+            domain, options, pool, meta_alpha=cfg.agent.alpha, gamma=cfg.agent.gamma
+        ), pool
     planner = planner or build_planner(cfg)
     if cfg.condition == "reprel_none":
         none_params = {k: v for k, v in cfg.abstraction.params.items() if k == "include_binding"}
