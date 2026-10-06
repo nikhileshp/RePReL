@@ -73,3 +73,11 @@ transfer:
 def test_to_dict_round_trip(tmp_path: Path) -> None:
     cfg = load_config(write(tmp_path, MINIMAL))
     assert load_config(write(tmp_path, __import__("yaml").safe_dump(cfg.to_dict()))) == cfg
+
+
+def test_scalar_seed_and_float_ints_are_coerced(tmp_path: Path) -> None:
+    cfg = load_config(
+        write(tmp_path, MINIMAL), parse_overrides(["seeds=3", "training.total_steps=1e3"])
+    )
+    assert cfg.seeds == (3,)
+    assert cfg.training.total_steps == 1000 and isinstance(cfg.training.total_steps, int)

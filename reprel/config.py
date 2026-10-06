@@ -127,6 +127,11 @@ class TransferConfig:
 def _dc(cls: type[Any], d: Mapping[str, Any] | None, where: str) -> Any:
     d = dict(d or {})
     _check(d, {f.name for f in fields(cls)}, where)
+    for f in fields(cls):
+        if f.name in d and f.type in ("int", "int | None") and isinstance(d[f.name], float):
+            if d[f.name] != int(d[f.name]):
+                raise ValueError(f"{where}.{f.name} must be an integer, got {d[f.name]!r}")
+            d[f.name] = int(d[f.name])
     return cls(**d)
 
 
@@ -173,7 +178,7 @@ class RunConfig:
             training=training,
             logging=_dc(LoggingConfig, data.get("logging"), "logging"),
             explore=_dc(ExploreConfig, data.get("explore"), "explore"),
-            seeds=tuple(int(s) for s in data.get("seeds", [0])),
+            seeds=_seeds(data.get("seeds", [0])),
             transfer=transfer,
             output_dir=str(data.get("output_dir", "outputs")),
         )
@@ -196,6 +201,12 @@ class RunConfig:
         if self.transfer is not None:
             out["transfer"] = {"stages": [s.to_dict() for s in self.transfer.stages]}
         return out
+
+
+def _seeds(value: Any) -> tuple[int, ...]:
+    if isinstance(value, (int, float)):
+        return (int(value),)
+    return tuple(int(s) for s in value)
 
 
 def parse_overrides(items: Sequence[str]) -> dict[str, Any]:

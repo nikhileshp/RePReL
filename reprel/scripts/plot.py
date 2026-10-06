@@ -14,6 +14,7 @@ from pathlib import Path
 
 import matplotlib
 import pandas as pd
+import yaml
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
@@ -21,11 +22,29 @@ import matplotlib.pyplot as plt  # noqa: E402
 PALETTE = ["#4F6D7A", "#C0504D", "#5B9A8B", "#E0A458", "#7A5C9A", "#8D8D8D"]
 
 
+def _eval_every(run_dir: Path) -> int:
+    cfg = run_dir / "config.yaml"
+    if cfg.exists():
+        data = yaml.safe_load(cfg.read_text()) or {}
+        return int((data.get("training") or {}).get("eval_every", 1))
+    return 1
+
+
 def load_experiment(experiment: Path, label_prefix: str = "") -> pd.DataFrame:
+    """Load all seeds; ``x`` is ``env_steps`` snapped down to the run's evaluation grid.
+
+    Seeds evaluate at episode boundaries, so their raw ``env_steps`` differ; snapping
+    aligns them for averaging. The zero-shot point of a transfer stage shares ``x`` with the
+    previous stage's last point and is kept apart by the ``stage`` column.
+    """
     frames = []
     for metrics in sorted(experiment.glob("*/seed_*/metrics.csv")):
         df = pd.read_csv(metrics)
         df["condition"] = label_prefix + metrics.parent.parent.name
+        every = _eval_every(metrics.parent)
+        df["x"] = (df["env_steps"] // every) * every
+        if "stage" not in df or df["stage"].isna().all():
+            df["stage"] = 0
         frames.append(df)
     if not frames:
         raise FileNotFoundError(f"no metrics.csv under {experiment}")
@@ -33,8 +52,8 @@ def load_experiment(experiment: Path, label_prefix: str = "") -> pd.DataFrame:
 
 
 def aggregate(df: pd.DataFrame, metric: str) -> pd.DataFrame:
-    grouped = df.groupby(["condition", "env_steps"])[metric]
-    out = grouped.agg(["mean", "std", "count"]).reset_index()
+    grouped = df.groupby(["condition", "stage", "x"])[metric]
+    out = grouped.agg(mean="mean", std=lambda s: s.std(ddof=0), count="count").reset_index()
     out["std"] = out["std"].fillna(0.0)
     return out
 
@@ -44,11 +63,22 @@ def plot_metric(df: pd.DataFrame, metric: str, ylabel: str, title: str, path: Pa
     fig, ax = plt.subplots(figsize=(7, 4.2))
     for i, (condition, g) in enumerate(agg.groupby("condition", sort=False)):
         color = PALETTE[i % len(PALETTE)]
-        ax.plot(g["env_steps"], g["mean"], label=condition, color=color, linewidth=1.8)
-        ax.fill_between(
-            g["env_steps"], g["mean"] - g["std"], g["mean"] + g["std"], color=color, alpha=0.18
-        )
-    stages = df.groupby("stage")["env_steps"].min()
+        for j, (_, seg) in enumerate(g.groupby("stage", sort=True)):
+            ax.plot(
+                seg["x"],
+                seg["mean"],
+                label=condition if j == 0 else None,
+                color=color,
+                linewidth=1.8,
+            )
+            ax.fill_between(
+                seg["x"],
+                seg["mean"] - seg["std"],
+                seg["mean"] + seg["std"],
+                color=color,
+                alpha=0.18,
+            )
+    stages = df.groupby("stage")["x"].min()
     for boundary in stages.values[1:]:
         ax.axvline(boundary, color="#8D8D8D", linestyle=":", linewidth=1)
     ax.set_xlabel("environment steps")
@@ -65,7 +95,7 @@ def summary(df: pd.DataFrame) -> pd.DataFrame:
     """Final-point metrics per condition (mean/std over seeds) and steps to 90% success."""
     rows = []
     for condition, g in df.groupby("condition", sort=False):
-        last = g[g["env_steps"] == g["env_steps"].max()]
+        last = g.sort_values("env_steps").groupby("seed").tail(1)
         per_seed = g.groupby("seed")
         reached = [
             s["env_steps"][s["success_rate"] >= 0.9].min()
