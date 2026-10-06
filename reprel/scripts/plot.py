@@ -83,6 +83,8 @@ def plot_metric(df: pd.DataFrame, metric: str, ylabel: str, title: str, path: Pa
         ax.axvline(boundary, color="#8D8D8D", linestyle=":", linewidth=1)
     ax.set_xlabel("environment steps")
     ax.set_ylabel(ylabel)
+    if metric == "success_rate":
+        ax.set_ylim(-0.03, 1.03)
     ax.set_title(title)
     ax.grid(True, alpha=0.3)
     ax.legend(frameon=False)
