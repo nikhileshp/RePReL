@@ -109,3 +109,16 @@ def test_update_does_not_create_a_row_for_the_next_key() -> None:
     agent.update("s", 0, 1.0, "unseen", terminal=False)
     assert set(agent.q) == {"s"}
     assert agent.q["s"][0] == pytest.approx(0.5)
+
+
+def test_update_accepts_a_custom_discount_for_smdp_updates() -> None:
+    agent = QLearningAgent(n_actions=2, alpha=1.0, gamma=0.9)
+    agent.update("next", 0, 0.0, "x", terminal=True)
+    agent.q["next"][:] = 10.0
+    agent.update("s", 1, 2.0, "next", terminal=False, discount=0.5)
+    assert agent.q["s"][1] == pytest.approx(2.0 + 0.5 * 10.0)
+
+
+def test_pool_factory_can_depend_on_the_agent_name() -> None:
+    pool = AgentPool(lambda name: QLearningAgent(6 if name == "meta" else 2, 0.1, 0.9))
+    assert pool.get("meta").n_actions == 6 and pool.get("pickup").n_actions == 2

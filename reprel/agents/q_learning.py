@@ -20,9 +20,19 @@ class Agent(ABC):
 
     @abstractmethod
     def update(
-        self, key: Hashable, action: int, reward: float, next_key: Hashable, *, terminal: bool
+        self,
+        key: Hashable,
+        action: int,
+        reward: float,
+        next_key: Hashable,
+        *,
+        terminal: bool,
+        discount: float | None = None,
     ) -> None:
-        """Learn from one transition. ``terminal`` disables bootstrapping from ``next_key``."""
+        """Learn from one transition. ``terminal`` disables bootstrapping from ``next_key``.
+
+        ``discount`` overrides gamma for this update (SMDP updates use gamma**k).
+        """
 
     @abstractmethod
     def state_dict(self) -> dict[str, Any]: ...
@@ -61,12 +71,20 @@ class QLearningAgent(Agent):
         return int(best[0]) if len(best) == 1 else int(rng.choice(best))
 
     def update(
-        self, key: Hashable, action: int, reward: float, next_key: Hashable, *, terminal: bool
+        self,
+        key: Hashable,
+        action: int,
+        reward: float,
+        next_key: Hashable,
+        *,
+        terminal: bool,
+        discount: float | None = None,
     ) -> None:
         row = self._row(key)
         next_row = None if terminal else self.q.get(next_key)
         bootstrap = 0.0 if next_row is None else float(next_row.max())
-        row[action] += self.alpha * (reward + self.gamma * bootstrap - row[action])
+        gamma = self.gamma if discount is None else discount
+        row[action] += self.alpha * (reward + gamma * bootstrap - row[action])
 
     def value(self, key: Hashable) -> float:
         row = self.q.get(key)
@@ -100,7 +118,14 @@ class RandomAgent(Agent):
         return int(rng.integers(self.n_actions))
 
     def update(
-        self, key: Hashable, action: int, reward: float, next_key: Hashable, *, terminal: bool
+        self,
+        key: Hashable,
+        action: int,
+        reward: float,
+        next_key: Hashable,
+        *,
+        terminal: bool,
+        discount: float | None = None,
     ) -> None:
         return None
 

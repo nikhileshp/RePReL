@@ -28,7 +28,7 @@ import numpy as np
 from reprel.agents.agent_pool import AgentPool
 from reprel.agents.q_learning import QLearningAgent
 from reprel.core.atoms import Atom
-from reprel.core.domain import Domain
+from reprel.core.domain import Domain, Transition
 from reprel.core.state import State
 from reprel.logging.transitions import TransitionLogger, TransitionRecord
 from reprel.planning.operators import OperatorInstance
@@ -183,7 +183,9 @@ class HRLExecutor:
         self.pool = pool
         self.gamma = gamma
         self.primitives = tuple(p for p in primitives if p in domain.actions)
-        self.meta = QLearningAgent(len(self.options) + len(self.primitives), meta_alpha, gamma)
+        n_meta = len(self.options) + len(self.primitives)
+        pool.register("hrl_meta", lambda: QLearningAgent(n_meta, meta_alpha, gamma))
+        self.meta = pool.get("hrl_meta")
         self.episode_counter = 0
 
     def run_episode(
@@ -204,7 +206,6 @@ class HRLExecutor:
         while steps < domain.max_steps:
             meta_key = state.atoms
             choice = self.meta.act(meta_key, rng, epsilon)
-            start_state = state
             smdp_return, k, done = 0.0, 0, False
             if choice >= len(self.options):
                 action = self.primitives[choice - len(self.options)]
@@ -258,15 +259,16 @@ class HRLExecutor:
                         break
             if learn:
                 # SMDP Q-learning: bootstrap with gamma^k from the state where the option ended
-                row = self.meta._row(meta_key)
-                nxt = self.meta.q.get(state.atoms)
-                bootstrap = 0.0 if done or nxt is None else float(nxt.max())
-                row[choice] += self.meta.alpha * (
-                    smdp_return + (self.gamma**k) * bootstrap - row[choice]
+                self.meta.update(
+                    meta_key,
+                    choice,
+                    smdp_return,
+                    state.atoms,
+                    terminal=done,
+                    discount=self.gamma**k,
                 )
             if done:
                 break
-            del start_state
         return EpisodeResult(env_return, steps, domain.is_success(state), operators_run=tuple(run))
 
     @staticmethod
@@ -276,14 +278,11 @@ class HRLExecutor:
         steps: int,
         action: str,
         state: State,
-        tr: object,
+        tr: Transition,
         terminated: bool,
     ) -> None:
         if logger is None:
             return
-        from reprel.core.domain import Transition
-
-        assert isinstance(tr, Transition)
         logger.log(
             TransitionRecord(
                 episode,

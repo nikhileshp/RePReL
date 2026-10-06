@@ -98,3 +98,37 @@ def test_hrl_options_run_at_least_one_step_when_already_at_target() -> None:
     ex = HRLExecutor(dom, options, pool, meta_alpha=0.1, gamma=0.95)
     res = ex.run_episode(np.random.default_rng(3), epsilon=1.0, learn=False)
     assert res.env_steps <= dom.max_steps
+
+
+def test_hrl_meta_table_lives_in_the_pool_and_is_saved(tmp_path: object) -> None:
+    dom, options = setup()
+    pool = AgentPool(lambda: QLearningAgent(dom.n_actions, alpha=0.1, gamma=0.95))
+    ex = HRLExecutor(dom, options, pool, meta_alpha=0.1, gamma=0.95)
+    ex.run_episode(np.random.default_rng(0), epsilon=1.0, learn=True)
+    assert "hrl_meta" in pool.names and pool.get("hrl_meta") is ex.meta
+    pool.save(f"{tmp_path}/agents.pkl")
+    other = AgentPool(lambda: QLearningAgent(dom.n_actions, alpha=0.1, gamma=0.95))
+    HRLExecutor(dom, options, other, meta_alpha=0.1, gamma=0.95)  # registers the meta factory
+    other.load(f"{tmp_path}/agents.pkl")
+    assert other.get("hrl_meta").n_keys == ex.meta.n_keys > 0
+
+
+def test_hrl_option_chosen_at_its_own_depot_takes_exactly_one_step() -> None:
+    dom, options = setup()
+    pool = AgentPool(lambda: QLearningAgent(dom.n_actions, alpha=0.1, gamma=0.95))
+    ex = HRLExecutor(dom, options, pool, meta_alpha=0.1, gamma=0.95)
+    s = dom.reset(np.random.default_rng(0))
+    s = s.with_atoms(
+        add=[Atom.parse("at(taxi,l_0_0)")],
+        remove=[a for a in s.atoms_with("at") if a.args[0] == "taxi"],
+    )
+    idx = [o.name for o in options].index("reach(l_0_0)")
+
+    class PickReach(QLearningAgent):
+        def act(self, k, r, eps):  # type: ignore[no-untyped-def]
+            return idx
+
+    ex.meta = PickReach(len(options) + 2, 0.1, 0.95)
+    res = ex.run_episode(np.random.default_rng(0), epsilon=0.0, learn=False, initial_state=s)
+    assert res.operators_run[0] == "reach(l_0_0)"
+    assert res.env_steps >= 1
