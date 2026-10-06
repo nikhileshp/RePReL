@@ -1,0 +1,11 @@
+# Box World, condition "flat". Tasks (original repo): goal_length 1 (own_first_key true),
+# 2, 3; max_steps = 100 * goal_length. Rewards: step -0.1, bump -0.2, key +1, gem +1.
+name: boxworld_g2
+condition: flat
+domain: {name: boxworld, size: 10, goal_length: 2, own_first_key: false}
+abstraction: {name: dfoci, spec: boxworld}
+agent: {alpha: 0.1, gamma: 0.99, terminal_reward: 1.0}
+epsilon: {schedule: linear, start: 0.75, end: 0.01, episodes: 2000}
+training: {total_steps: 1500000, eval_every: 25000, eval_episodes: 20, eval_epsilon: 0.01}
+seeds: [0, 1, 2, 3, 4]
+output_dir: outputs

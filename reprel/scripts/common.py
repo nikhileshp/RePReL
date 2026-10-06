@@ -86,7 +86,9 @@ def build_runner(
         ), pool
     planner = planner or build_planner(cfg)
     if cfg.condition == "reprel_none":
-        none_params = {k: v for k, v in cfg.abstraction.params.items() if k == "include_binding"}
+        none_params = {
+            k: v for k, v in cfg.abstraction.params.items() if k in ("include_binding", "exclude")
+        }
         abstraction = make_abstraction("none", **none_params)
     else:
         params = {"spec": cfg.domain.name, **cfg.abstraction.params}
