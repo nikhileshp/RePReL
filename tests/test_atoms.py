@@ -83,3 +83,9 @@ def test_unify_checks_types_from_signature() -> None:
     assert unify(
         Atom.parse("at(P,L)"), Atom.parse("at(p1,l_0_0)"), signature=signature, types=types
     ) == {"P": "p1", "L": "l_0_0"}
+
+
+def test_atom_coerces_list_args_to_tuple_so_it_stays_hashable() -> None:
+    atom = Atom("at", ["p1", "l_0_0"])  # type: ignore[arg-type]
+    assert atom.args == ("p1", "l_0_0")
+    assert hash(atom) == hash(Atom("at", ("p1", "l_0_0")))

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from functools import cached_property
 
 from .atoms import Atom, Obj
 
@@ -20,25 +21,41 @@ class State:
     atoms: frozenset[Atom]
     objects: frozenset[Obj]
 
+    # --- cached indexes (instance-local; excluded from eq/hash) ---------------------------
+    @cached_property
+    def _by_pred(self) -> dict[str, frozenset[Atom]]:
+        index: dict[str, set[Atom]] = {}
+        for atom in self.atoms:
+            index.setdefault(atom.pred, set()).add(atom)
+        return {pred: frozenset(atoms) for pred, atoms in index.items()}
+
+    @cached_property
+    def _type_index(self) -> dict[str, str]:
+        return {o.name: o.type for o in self.objects}
+
+    @cached_property
+    def _by_type(self) -> dict[str, tuple[str, ...]]:
+        index: dict[str, list[str]] = {}
+        for o in self.objects:
+            index.setdefault(o.type, []).append(o.name)
+        return {t: tuple(sorted(names)) for t, names in index.items()}
+
     # --- queries -----------------------------------------------------------------------
     def holds(self, atom: Atom) -> bool:
         return atom in self.atoms
 
     def atoms_with(self, pred: str) -> frozenset[Atom]:
-        return frozenset(a for a in self.atoms if a.pred == pred)
+        return self._by_pred.get(pred, frozenset())
 
     def type_of(self, name: str) -> str:
-        for obj in self.objects:
-            if obj.name == name:
-                return obj.type
-        raise KeyError(name)
+        return self._type_index[name]
 
-    def types(self) -> dict[str, str]:
-        """Object name -> type name."""
-        return {o.name: o.type for o in self.objects}
+    def types(self) -> Mapping[str, str]:
+        """Object name -> type name (read-only view)."""
+        return self._type_index
 
     def objects_of_type(self, type_name: str) -> tuple[str, ...]:
-        return tuple(sorted(o.name for o in self.objects if o.type == type_name))
+        return self._by_type.get(type_name, ())
 
     # --- constructors ------------------------------------------------------------------
     def with_atoms(self, add: Iterable[Atom] = (), remove: Iterable[Atom] = ()) -> State:

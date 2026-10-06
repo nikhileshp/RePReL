@@ -63,3 +63,9 @@ def test_unknown_action_is_rejected_by_validate() -> None:
     with pytest.raises(ValueError):
         dom.validate_action("jump")
     assert dom.action_index("right") == 1
+
+
+def test_goal_alias_is_exported() -> None:
+    from reprel.core.domain import Goal
+
+    assert Goal == frozenset[Literal]

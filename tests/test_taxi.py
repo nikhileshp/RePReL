@@ -5,7 +5,7 @@ from reprel.core.atoms import Atom, Literal
 from reprel.core.domain import make_domain
 from reprel.core.state import State
 from reprel.domains.taxi import TaxiConfig, TaxiDomain
-from reprel.domains.taxi_layouts import LAYOUTS, parse_layout
+from reprel.domains.taxi_layouts import EIGHT, LAYOUTS, parse_layout
 
 
 def A(text: str) -> Atom:
@@ -223,3 +223,12 @@ def test_random_rollout_preserves_state_invariants() -> None:
             located = [a for a in s.atoms_with("at") if a.args[0] == p]
             aboard = s.holds(A(f"in({p},taxi)"))
             assert len(located) + int(aboard) == 1
+
+
+def test_grid_is_hashable() -> None:
+    assert hash(LAYOUTS["eight"]) == hash(parse_layout(EIGHT))
+
+
+def test_config_rejects_non_positive_passenger_count() -> None:
+    with pytest.raises(ValueError):
+        TaxiConfig(num_passengers=0)

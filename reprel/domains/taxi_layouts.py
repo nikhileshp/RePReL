@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import cached_property
 
 Cell = tuple[int, int]
 
@@ -16,7 +18,11 @@ class Grid:
     height: int
     width: int
     free_cells: frozenset[Cell]
-    depots: dict[str, Cell]
+    depot_items: tuple[tuple[str, Cell], ...]
+
+    @cached_property
+    def depots(self) -> Mapping[str, Cell]:
+        return dict(self.depot_items)
 
     def is_blocked(self, cell: Cell) -> bool:
         return cell not in self.free_cells
@@ -42,7 +48,7 @@ def parse_layout(text: str) -> Grid:
             free.add((r, c))
             if ch != " ":
                 depots[ch] = (r, c)
-    return Grid(height, width, frozenset(free), depots)
+    return Grid(height, width, frozenset(free), tuple(sorted(depots.items())))
 
 
 EIGHT = """\

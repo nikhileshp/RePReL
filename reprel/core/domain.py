@@ -18,6 +18,7 @@ from .atoms import Literal
 from .state import State
 
 Action = str
+Goal = frozenset[Literal]
 
 
 @dataclass(frozen=True)
@@ -56,7 +57,7 @@ class Domain(ABC):
         """Apply ``action`` in ``state``. Must not mutate ``state``."""
 
     @abstractmethod
-    def goal(self, state: State) -> frozenset[Literal]:
+    def goal(self, state: State) -> Goal:
         """Goal literals the planner must achieve for the instance ``state`` belongs to."""
 
     @abstractmethod

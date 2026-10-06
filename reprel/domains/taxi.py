@@ -32,6 +32,10 @@ class TaxiConfig:
     drop_reward: float = 20.0
     illegal_reward: float = -1.0
 
+    def __post_init__(self) -> None:
+        if self.num_passengers < 1:
+            raise ValueError("num_passengers must be >= 1")
+
 
 def loc_name(cell: Cell) -> str:
     return f"l_{cell[0]}_{cell[1]}"

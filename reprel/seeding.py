@@ -12,5 +12,6 @@ def seed_everything(seed: int) -> np.random.Generator:
     """Seed the stdlib and legacy NumPy RNGs and return a fresh ``Generator`` for ``seed``."""
     random.seed(seed)
     np.random.seed(seed)
+    # Only affects child processes; the current interpreter's hash seed is already fixed.
     os.environ["PYTHONHASHSEED"] = str(seed)
     return np.random.default_rng(seed)

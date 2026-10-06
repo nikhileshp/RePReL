@@ -36,6 +36,10 @@ class Atom:
     pred: str
     args: tuple[str, ...]
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.args, tuple):
+            object.__setattr__(self, "args", tuple(self.args))
+
     @classmethod
     def parse(cls, text: str) -> Atom:
         """Parse ``"pred(a,b)"`` into an Atom. Whitespace around arguments is ignored."""
@@ -90,7 +94,10 @@ class Literal:
 
 
 def type_compatible(actual: str, required: str) -> bool:
-    """True if an object of type ``actual`` may fill a slot of type ``required``."""
+    """True if an object of type ``actual`` may fill a slot of type ``required``.
+
+    Types are flat for now; subtype hierarchies from ``Domain.types`` are not consulted.
+    """
     return required == ANY_TYPE or actual == required
 
 
