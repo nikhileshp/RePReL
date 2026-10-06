@@ -115,15 +115,15 @@ class Domain(ABC):
     def step(self, state: State, action: Action, rng) -> Transition   # pure: no hidden state
     def goal(self, state: State) -> Goal                                  # literals the planner must achieve
     def is_success(self, state: State) -> bool
-    def max_steps(self) -> int
+    max_steps: int                                                        # instance attribute from config
 ```
 
 `step` is a pure function of `(state, action)`; episode step counting lives in the executor.
 This is what makes transition logging exact, tests trivial, and a later multi-agent `step`
 (joint action = tuple of actions, agents as objects of type `agent`) a new Domain subclass rather
 than a change to the interface. Each domain has a frozen `*Config` dataclass (instance size,
-layout, rewards, max_steps) and a `from_config` constructor; `DOMAINS` registry maps names
-to classes.
+layout, rewards, max_steps); the constructor takes `(config=None, **overrides)` so YAML
+keyword config and programmatic configs both work. The `DOMAINS` registry maps names to classes.
 
 ### Taxi (M1)
 - Objects: `taxi` (type `taxi`), `p1..pN` (`passenger`), `l_r_c` for every non-wall cell
@@ -136,7 +136,8 @@ to classes.
   boards), dropoff iff carried passenger's destination is the taxi cell. Rewards step −0.1,
   pickup +10, drop +20, illegal pickup/drop −1; done when all delivered or `max_steps`
   (default 1000; per-instance override in config). All numbers in `TaxiConfig`.
-- Instance generation: `num_passengers` is the size parameter; taxi at a random free cell;
+- Instance generation: `num_passengers` is the size parameter; taxi at a random free
+  non-depot cell (as in RePReL-domains);
   each passenger: pickup depot and distinct destination depot sampled from `{R,G,B,Y}`.
   Layouts: `eight` (paper) and `five` (classic 5x5), selectable by name.
 - Goal: `{delivered(p) for all p}`.
