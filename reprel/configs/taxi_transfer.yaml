@@ -1,0 +1,19 @@
+# Experiment 4: train D-FOCI RePReL on 1 then 2 passengers, then evaluate (zero-shot at the
+# first point of each stage) and continue training on 3, 4 and 5 passengers without resetting
+# the Q-tables.
+name: taxi_transfer
+condition: reprel_dfoci
+domain: {name: taxi, num_passengers: 1, layout: eight, max_steps: 1000}
+abstraction: {name: dfoci, spec: taxi}
+agent: {alpha: 0.01, gamma: 0.99, terminal_reward: 10.0}
+epsilon: {schedule: linear, start: 0.75, end: 0.01, episodes: 2000}
+training: {total_steps: 1000000, eval_every: 20000, eval_episodes: 20, eval_epsilon: 0.01}
+seeds: [0, 1, 2, 3, 4]
+transfer:
+  stages:
+    - {num_passengers: 1, total_steps: 500000}
+    - {num_passengers: 2, total_steps: 500000}
+    - {num_passengers: 3, total_steps: 300000}
+    - {num_passengers: 4, total_steps: 300000}
+    - {num_passengers: 5, total_steps: 300000}
+output_dir: outputs

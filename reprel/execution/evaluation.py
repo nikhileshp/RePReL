@@ -54,15 +54,33 @@ def train(
     logger: TransitionLogger | None = None,
     on_eval: Callable[[TrainingPoint], None] | None = None,
     max_idle_episodes: int = 100,
+    initial_eval: bool = False,
+    step_offset: int = 0,
 ) -> list[TrainingPoint]:
     """Train for ``total_steps`` environment steps, evaluating every ``eval_every`` steps.
 
     Evaluation happens at the first episode boundary after each multiple of ``eval_every``
     and after the final episode, using a separate RNG so it never perturbs training.
+    With ``initial_eval`` the untrained (or transferred) agents are evaluated first;
+    ``step_offset`` is added to reported step counts (for multi-stage transfer runs).
     """
     eval_rng = eval_rng if eval_rng is not None else np.random.default_rng(rng.integers(2**32))
     history: list[TrainingPoint] = []
     steps, episode, next_eval, idle = 0, 0, eval_every, 0
+
+    def record(epsilon: float) -> None:
+        point = TrainingPoint(
+            step_offset + steps,
+            episode,
+            epsilon,
+            evaluate(runner, eval_rng, eval_episodes, eval_epsilon),
+        )
+        history.append(point)
+        if on_eval is not None:
+            on_eval(point)
+
+    if initial_eval:
+        record(schedule.value(0))
     while steps < total_steps:
         epsilon = schedule.value(episode)
         result = runner.run_episode(rng, epsilon, learn=True, logger=logger)
@@ -75,12 +93,7 @@ def train(
                 "(planning failures or goals satisfied at reset)"
             )
         if steps >= next_eval or steps >= total_steps:
-            point = TrainingPoint(
-                steps, episode, epsilon, evaluate(runner, eval_rng, eval_episodes, eval_epsilon)
-            )
-            history.append(point)
-            if on_eval is not None:
-                on_eval(point)
+            record(epsilon)
             while next_eval <= steps:
                 next_eval += eval_every
     return history

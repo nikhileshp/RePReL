@@ -18,6 +18,7 @@ import yaml
 METRIC_COLUMNS = (
     "condition",
     "seed",
+    "stage",
     "env_steps",
     "episodes",
     "eval_return_mean",
