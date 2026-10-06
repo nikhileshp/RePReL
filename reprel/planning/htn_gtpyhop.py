@@ -48,7 +48,7 @@ class GTPyhopPlanner(Planner):
         methods: Compound task name -> ordered list of method callables.
         root_task: Builds the initial todo list from a goal, e.g. ``lambda g: [("achieve", g)]``.
         signature: Predicate signature used for typed unification.
-        name: GTPyhop domain name (must be unique per process).
+        name: GTPyhop domain name (used for diagnostics only).
     """
 
     def __init__(
@@ -69,8 +69,13 @@ class GTPyhopPlanner(Planner):
             gtpyhop.declare_task_methods(
                 task, *(self._make_method(task, i, fn) for i, fn in enumerate(fns))
             )
+        # DFS with backtracking: if a method's refinement fails later, try the next method.
         self._session = gtpyhop.PlannerSession(
-            domain=self._domain, verbose=0, structured_logging=False, memory_tracking=False
+            domain=self._domain,
+            verbose=0,
+            strategy="iterative_dfs_backtracking",
+            structured_logging=False,
+            memory_tracking=False,
         )
 
     @property
@@ -82,7 +87,11 @@ class GTPyhopPlanner(Planner):
         with contextlib.redirect_stdout(io.StringIO()):
             result = self._session.find_plan(_PlanningState(state), list(self._root_task(goal)))
         if not result.success or result.plan is None:
-            raise PlanningFailure(result.error or "no plan found")
+            error = result.error or "no plan found"
+            if error.startswith("Planning error"):
+                # GTPyhop swallows exceptions raised inside methods/actions; surface them.
+                raise RuntimeError(f"error inside planning domain: {error}")
+            raise PlanningFailure(error)
         return [self._specs[step[0]].instantiate(tuple(step[1:])) for step in result.plan]
 
     # ------------------------------------------------------------------ adapters
@@ -103,8 +112,9 @@ class GTPyhopPlanner(Planner):
 
     @staticmethod
     def _make_method(task: str, index: int, fn: Method) -> Callable[..., Sequence[Task] | None]:
-        def method(gs: _PlanningState, *args: Any) -> Sequence[Task] | None:
-            return fn(gs.rs, *args)
+        def method(gs: _PlanningState, *args: Any) -> list[Task] | None:
+            result = fn(gs.rs, *args)
+            return None if result is None else list(result)
 
         method.__name__ = f"{task}_m{index}_{getattr(fn, '__name__', 'method')}"
         return method

@@ -88,3 +88,29 @@ def test_instance_is_frozen() -> None:
     inst = OperatorInstance(PICKUP, ("p1",))
     with pytest.raises(AttributeError):
         inst.args = ("p2",)  # type: ignore[misc]
+
+
+def test_spec_rejects_effect_variables_that_are_never_bound() -> None:
+    with pytest.raises(ValueError):
+        OperatorSpec(
+            name="bad",
+            params=(("P", "passenger"),),
+            preconditions=(),
+            add=(Atom.parse("at(P,L)"),),
+            delete=(),
+            termination=(),
+        )
+
+
+def test_applicable_rejects_unknown_object_even_for_untyped_role() -> None:
+    spec = OperatorSpec(
+        name="noop",
+        params=(("X", "object"),),
+        preconditions=(),
+        add=(),
+        delete=(),
+        termination=(),
+    )
+    s = make_state("at(taxi,l_0_0)")
+    assert spec.applicable(s, {"X": "ghost"}, signature=SIGNATURE) is None
+    assert spec.applicable(s, {"X": "taxi"}, signature=SIGNATURE) == {"X": "taxi"}

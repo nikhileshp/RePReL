@@ -23,7 +23,8 @@ def matches(
     ``signature`` and the state's objects). Negative literals are evaluated once their
     variables are bound; a negative literal with unbound variables holds iff no atom
     unifies with it (negation as failure). Positive literals are processed first so
-    negative ones see maximal bindings.
+    negative ones see maximal bindings; several unbound negative literals are each checked
+    independently, not jointly.
     """
     ordered = sorted(literals, key=lambda lit: not lit.positive)
     types = state.types()

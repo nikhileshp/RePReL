@@ -28,6 +28,15 @@ class OperatorSpec:
     termination: tuple[Literal, ...]
     terminal_reward: float = 1.0
 
+    def __post_init__(self) -> None:
+        bound = set(self.roles)
+        for lit in self.preconditions:
+            bound.update(lit.atom.variables())
+        for atom in (*self.add, *self.delete):
+            unbound = set(atom.variables()) - bound
+            if unbound:
+                raise ValueError(f"{self.name}: effect {atom} uses unbound variables {unbound}")
+
     @property
     def roles(self) -> tuple[str, ...]:
         return tuple(role for role, _ in self.params)
@@ -44,7 +53,7 @@ class OperatorSpec:
         types = state.types()
         for role, required in self.params:
             obj = binding.get(role)
-            if obj is None or not type_compatible(types.get(obj, ""), required):
+            if obj is None or obj not in types or not type_compatible(types[obj], required):
                 return None
         return next(matches(self.preconditions, state, binding, signature=signature), None)
 

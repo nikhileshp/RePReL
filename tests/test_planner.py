@@ -5,7 +5,7 @@ from reprel.core.atoms import Atom, Literal
 from reprel.core.state import State
 from reprel.domains.taxi import TaxiConfig, TaxiDomain
 from reprel.domains.taxi_planning import TAXI_OPERATORS, make_taxi_planner
-from reprel.planning.operators import OperatorInstance
+from reprel.planning.operators import Goal, OperatorInstance
 from reprel.planning.planner import Planner, PlanningFailure
 
 
@@ -85,3 +85,66 @@ def test_planning_prints_nothing(capsys: pytest.CaptureFixture[str]) -> None:
     make_taxi_planner().plan(s, dom.goal(s))
     captured = capsys.readouterr()
     assert captured.out == "" and captured.err == ""
+
+
+def board(s: State, p: str) -> State:
+    (at_p,) = [a for a in s.atoms_with("at") if a.args[0] == p]
+    return s.with_atoms(add=[Atom.parse(f"in({p},taxi)")], remove=[at_p])
+
+
+def test_replan_with_other_passenger_aboard_drops_it_first() -> None:
+    # The pickup agent may board whoever is waiting at the taxi's cell; the planner must cope.
+    dom = TaxiDomain(TaxiConfig(num_passengers=2))
+    s = board(dom.reset(np.random.default_rng(8)), "p2")
+    plan = make_taxi_planner().plan(s, dom.goal(s))
+    assert [str(op) for op in plan] == ["drop(p2)", "pickup(p1)", "drop(p1)"]
+    assert dom.is_success(simulate(dom, s, plan))
+
+
+def test_replan_with_non_goal_passenger_aboard_still_frees_the_taxi() -> None:
+    dom = TaxiDomain(TaxiConfig(num_passengers=2))
+    s = board(dom.reset(np.random.default_rng(9)), "p2")
+    plan = make_taxi_planner().plan(s, frozenset({Literal.parse("delivered(p1)")}))
+    assert [str(op) for op in plan] == ["drop(p2)", "pickup(p1)", "drop(p1)"]
+
+
+def test_pickup_is_not_applicable_while_carrying() -> None:
+    dom = TaxiDomain(TaxiConfig(num_passengers=2))
+    s = board(dom.reset(np.random.default_rng(8)), "p2")
+    pickup = next(op for op in TAXI_OPERATORS if op.name == "pickup")
+    assert pickup.apply(s, {"P": "p1"}, signature=dom.predicates) is None
+
+
+def test_method_exceptions_are_not_reported_as_planning_failure() -> None:
+    from reprel.planning.htn_gtpyhop import GTPyhopPlanner
+
+    def broken(state: State, goal: Goal) -> list[tuple[str, ...]]:
+        raise KeyError("bug in method")
+
+    planner = GTPyhopPlanner(
+        TAXI_OPERATORS, {"achieve": [broken]}, lambda g: [("achieve", g)], name="broken"
+    )
+    dom = TaxiDomain(TaxiConfig(num_passengers=1))
+    s = dom.reset(np.random.default_rng(0))
+    with pytest.raises(RuntimeError) as excinfo:
+        planner.plan(s, dom.goal(s))
+    assert not isinstance(excinfo.value, PlanningFailure)
+
+
+def test_backtracking_over_methods() -> None:
+    """If the first applicable method leads to a dead end, the next one is tried."""
+    from reprel.planning.htn_gtpyhop import GTPyhopPlanner
+
+    def dead_end(state: State, goal: Goal) -> list[tuple[str, ...]]:
+        return [("pickup", "p9")]  # p9 does not exist -> action fails
+
+    planner = GTPyhopPlanner(
+        TAXI_OPERATORS,
+        {"achieve": [dead_end, lambda s, g: [("pickup", "p1"), ("drop", "p1")]]},
+        lambda g: [("achieve", g)],
+        signature=TaxiDomain.predicates,
+        name="backtrack",
+    )
+    dom = TaxiDomain(TaxiConfig(num_passengers=1))
+    s = dom.reset(np.random.default_rng(0))
+    assert [str(op) for op in planner.plan(s, dom.goal(s))] == ["pickup(p1)", "drop(p1)"]

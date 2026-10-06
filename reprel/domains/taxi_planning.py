@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from reprel.core.atoms import Atom, Literal
 from reprel.core.state import State
 from reprel.planning.htn_gtpyhop import GTPyhopPlanner, Method, Task
@@ -21,7 +23,7 @@ def _atoms(*texts: str) -> tuple[Atom, ...]:
 PICKUP = OperatorSpec(
     name="pickup",
     params=(("P", "passenger"),),
-    preconditions=_lits(f"at({TAXI},L0)", "at(P,L)", f"not in(P,{TAXI})", "not delivered(P)"),
+    preconditions=_lits(f"at({TAXI},L0)", "at(P,L)", f"not in(Q,{TAXI})", "not delivered(P)"),
     add=_atoms(f"in(P,{TAXI})", f"at({TAXI},L)"),
     delete=_atoms("at(P,L)", f"at({TAXI},L0)"),
     termination=_lits(f"in(P,{TAXI})"),
@@ -41,7 +43,14 @@ TAXI_OPERATORS: tuple[OperatorSpec, ...] = (PICKUP, DROP)
 
 # ------------------------------------------------------------------ task methods
 def m_achieve(state: State, goal: Goal) -> list[Task] | None:
-    """Transport the lowest-index passenger whose goal literal is not yet satisfied."""
+    """Transport whoever is aboard, else the lowest-index passenger still to be delivered.
+
+    The taxi carries one passenger at a time, so a passenger already in the taxi (possibly
+    boarded by the RL agent out of plan order) must be dropped before anyone else is picked up.
+    """
+    aboard = [a.args[0] for a in state.atoms_with("in")]
+    if aboard:
+        return [("transport", aboard[0]), ("achieve", goal)]
     pending = sorted(
         (
             lit.atom.args[0]
@@ -75,9 +84,7 @@ TAXI_METHODS: dict[str, list[Method]] = {
 
 def make_taxi_planner(terminal_reward: float = 1.0) -> GTPyhopPlanner:
     """Build a planner for the Taxi domain; ``terminal_reward`` is tR for both operators."""
-    operators = tuple(
-        OperatorSpec(**{**op.__dict__, "terminal_reward": terminal_reward}) for op in TAXI_OPERATORS
-    )
+    operators = tuple(replace(op, terminal_reward=terminal_reward) for op in TAXI_OPERATORS)
     return GTPyhopPlanner(
         operators,
         TAXI_METHODS,
