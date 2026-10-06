@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Experiment artifacts
+outputs/
+temp/
+*.parquet
+*.pkl
+
+# External clones (not redistributed)
+third_party/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Assistant tooling (never committed)
+.claude/
+.claude.json
+CLAUDE.md
+CLAUDE.*.md
+.cursor/
+.aider*
