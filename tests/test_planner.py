@@ -77,3 +77,11 @@ def test_planner_is_reusable_and_deterministic() -> None:
     assert planner.plan(s, dom.goal(s)) == planner.plan(s, dom.goal(s))
     s2 = dom.reset(np.random.default_rng(6))
     assert len(planner.plan(s2, dom.goal(s2))) == 4
+
+
+def test_planning_prints_nothing(capsys: pytest.CaptureFixture[str]) -> None:
+    dom = TaxiDomain(TaxiConfig(num_passengers=1))
+    s = dom.reset(np.random.default_rng(7))
+    make_taxi_planner().plan(s, dom.goal(s))
+    captured = capsys.readouterr()
+    assert captured.out == "" and captured.err == ""

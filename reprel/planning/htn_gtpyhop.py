@@ -8,6 +8,8 @@ add/delete effects). Task methods are plain callables ``(state: State, *args) ->
 
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
@@ -76,7 +78,9 @@ class GTPyhopPlanner(Planner):
         return self._specs
 
     def plan(self, state: State, goal: Goal) -> list[OperatorInstance]:
-        result = self._session.find_plan(_PlanningState(state), list(self._root_task(goal)))
+        # GTPyhop's session prints when it saves/restores the global verbosity level.
+        with contextlib.redirect_stdout(io.StringIO()):
+            result = self._session.find_plan(_PlanningState(state), list(self._root_task(goal)))
         if not result.success or result.plan is None:
             raise PlanningFailure(result.error or "no plan found")
         return [self._specs[step[0]].instantiate(tuple(step[1:])) for step in result.plan]
