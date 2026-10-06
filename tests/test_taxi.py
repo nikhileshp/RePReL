@@ -207,3 +207,19 @@ def test_rewards_are_configurable() -> None:
     s = place(dom, s0, "l_0_0", "l_0_0", "l_7_0")
     assert dom.step(s, "pickup", np.random.default_rng(0)).reward == pytest.approx(-1.0)
     assert dom.step(s, "dropoff", np.random.default_rng(0)).reward == pytest.approx(-6.0)
+
+
+def test_random_rollout_preserves_state_invariants() -> None:
+    dom = TaxiDomain(TaxiConfig(num_passengers=3))
+    rng = np.random.default_rng(5)
+    s = dom.reset(rng)
+    free = {f"l_{r}_{c}" for r, c in dom.grid.free_cells}
+    for _ in range(500):
+        s = dom.step(s, dom.actions[int(rng.integers(dom.n_actions))], rng).next_state
+        taxi_at = [a for a in s.atoms_with("at") if a.args[0] == "taxi"]
+        assert len(taxi_at) == 1 and taxi_at[0].args[1] in free
+        assert len(s.atoms_with("in")) <= 1
+        for p in s.objects_of_type("passenger"):
+            located = [a for a in s.atoms_with("at") if a.args[0] == p]
+            aboard = s.holds(A(f"in({p},taxi)"))
+            assert len(located) + int(aboard) == 1
