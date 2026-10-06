@@ -1,0 +1,16 @@
+# Box World transfer (the original repo's RePReL+T chain): task2 (goal length 2, agent owns
+# the first key) -> task5 (goal length 2, key on the grid) -> task3 (goal length 3).
+name: boxworld_transfer
+condition: reprel_dfoci
+domain: {name: boxworld, size: 10, goal_length: 2, own_first_key: true}
+abstraction: {name: dfoci, spec: boxworld}
+agent: {alpha: 0.1, gamma: 0.99, terminal_reward: 1.0}
+epsilon: {schedule: linear, start: 0.75, end: 0.01, episodes: 2000}
+training: {total_steps: 1500000, eval_every: 25000, eval_episodes: 20, eval_epsilon: 0.01}
+seeds: [0, 1, 2, 3, 4]
+transfer:
+  stages:
+    - {goal_length: 2, own_first_key: true, total_steps: 1500000}
+    - {goal_length: 2, own_first_key: false, total_steps: 1500000}
+    - {goal_length: 3, own_first_key: false, total_steps: 1500000}
+output_dir: outputs
