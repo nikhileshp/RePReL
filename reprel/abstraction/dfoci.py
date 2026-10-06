@@ -319,9 +319,9 @@ class DFOCIAbstraction(Abstraction):
                     if declared is not None:
                         var_types.append((canon[v], declared))
                 atom = lit.atom.substitute(canon)
-                simple = all(is_variable(a) for a in atom.args) and len(set(atom.args)) == len(
-                    atom.args
-                )
+                simple = all(is_variable(a) and a not in roles for a in atom.args) and len(
+                    set(atom.args)
+                ) == len(atom.args)
                 unique.setdefault(
                     (atom, tuple(var_types)), _Pattern(atom, tuple(var_types), simple)
                 )
@@ -341,7 +341,7 @@ class DFOCIAbstraction(Abstraction):
             candidates = state.atoms_with(bound.pred)
             if not candidates:
                 continue
-            if pattern.simple and not binding:
+            if pattern.simple:
                 positions = [(bound.args.index(v), t) for v, t in pattern.var_types]
                 kept.update(
                     atom
