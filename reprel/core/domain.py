@@ -45,7 +45,7 @@ class Domain(ABC):
     types: ClassVar[Mapping[str, str | None]]
     predicates: ClassVar[Mapping[str, tuple[str, ...]]]
     actions: ClassVar[tuple[Action, ...]]
-    max_steps: ClassVar[int]
+    max_steps: int
 
     @abstractmethod
     def reset(self, rng: np.random.Generator) -> State:
