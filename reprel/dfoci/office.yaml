@@ -1,0 +1,51 @@
+# D-FOCI statements for Office World, from Kokel et al. (ICAPS 2021), Table 1.
+# Paper notation -> ours: agent-at(L) = at(agent,L); with-agent(X) = with(X).
+# Walls and plants are explicit static atoms and enter the movement/reward statements.
+domain: office
+source: hand
+types:
+  X: item
+  L: location
+  L1: location
+  L2: location
+  Dir: dir
+
+reward_parents:
+  - at(agent,L1)
+  - move(Dir)
+  - wall(L1,Dir)
+  - plant(L2)
+
+statements:
+  - influences:
+      - at(agent,L1)
+      - move(Dir)
+      - wall(L1,Dir)
+    target: at(agent,L2)
+
+  - operator: pickup(X)
+    influences:
+      - at(agent,L1)
+      - at(X,L)
+      - with(X)
+    target: with(X)
+
+  - operator: deliver(X)
+    influences:
+      - at(agent,L1)
+      - with(X)
+      - office(L)
+      - delivered(X)
+    target: delivered(X)
+
+operators:
+  pickup(X):
+    reward_parents:
+      - with(X)
+    termination_parents:
+      - with(X)
+  deliver(X):
+    reward_parents:
+      - delivered(X)
+    termination_parents:
+      - delivered(X)

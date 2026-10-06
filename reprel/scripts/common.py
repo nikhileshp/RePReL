@@ -37,6 +37,10 @@ def build_planner(cfg: RunConfig) -> Planner:
         from reprel.domains.taxi_planning import make_taxi_planner
 
         return make_taxi_planner(terminal_reward=cfg.agent.terminal_reward)
+    if cfg.domain.name == "office":
+        from reprel.domains.office_planning import make_office_planner
+
+        return make_office_planner(terminal_reward=cfg.agent.terminal_reward)
     raise ValueError(f"no planner registered for domain {cfg.domain.name!r}")
 
 
