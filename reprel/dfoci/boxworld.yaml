@@ -1,0 +1,49 @@
+# D-FOCI statements for Box World, from Kokel et al. (ICAPS 2021), Table 1. The relevant
+# predicates are the agent's sensors (neighbor, agent-at, direction) plus the operator's own
+# own/open literal; exact positions, colours and box structure are irrelevant to the RL policy.
+domain: boxworld
+source: hand
+types:
+  K: key
+  L: lock
+  Dir: dir
+  Dir2: dir
+  D: dir
+
+reward_parents:
+  - neighbor(Dir,C)
+  - agent-at(L1)
+  - move(D)
+
+statements:
+  - influences:
+      - neighbor(Dir,C)
+      - agent-at(L2)
+      - move(D)
+    target: agent-at(L1)
+
+  - operator: pick_key(K)
+    influences:
+      - agent-at(L1)
+      - direction(K,Dir2)
+      - own(K)
+    target: own(K)
+
+  - operator: unlock(L)
+    influences:
+      - agent-at(L1)
+      - direction(L,Dir2)
+      - open(L)
+    target: open(L)
+
+operators:
+  pick_key(K):
+    reward_parents:
+      - own(K)
+    termination_parents:
+      - own(K)
+  unlock(L):
+    reward_parents:
+      - open(L)
+    termination_parents:
+      - open(L)

@@ -41,6 +41,10 @@ def build_planner(cfg: RunConfig) -> Planner:
         from reprel.domains.office_planning import make_office_planner
 
         return make_office_planner(terminal_reward=cfg.agent.terminal_reward)
+    if cfg.domain.name == "boxworld":
+        from reprel.domains.boxworld_planning import make_boxworld_planner
+
+        return make_boxworld_planner(terminal_reward=cfg.agent.terminal_reward)
     raise ValueError(f"no planner registered for domain {cfg.domain.name!r}")
 
 
