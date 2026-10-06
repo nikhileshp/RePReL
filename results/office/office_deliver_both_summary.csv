@@ -1,0 +1,4 @@
+condition,seeds,final_steps,final_return_mean,final_return_std,final_success_mean,final_success_std,steps_to_90pct_success_median,seeds_reaching_90pct
+flat,5,200243,-312.58000000000004,22.591825955420255,0.030000000000000006,0.04,,0
+reprel_dfoci,5,200034,60.9,2.1720957621615113,1.0,0.0,40050.0,5
+reprel_none,5,200277,-69.42,27.373300860510046,0.64,0.07348469228349533,155012.0,1
