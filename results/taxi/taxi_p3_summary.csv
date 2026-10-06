@@ -1,3 +1,4 @@
 condition,seeds,final_steps,final_return_mean,final_return_std,final_success_mean,final_success_std,steps_to_90pct_success_median,seeds_reaching_90pct
+hrl,5,1500991,-432.42000000000525,55.38592420462204,0.0,0.0,,0
 reprel_dfoci,5,1500054,81.27699999999997,4.140491033681858,1.0,0.0,120249.0,5
 reprel_none,5,1500965,-395.27000000000487,51.77333869860135,0.0,0.0,,0

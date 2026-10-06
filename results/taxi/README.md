@@ -16,6 +16,12 @@ Conditions:
 | `flat` | one Q-table on the whole task | full ground state | environment reward |
 | `reprel_none` | HTN planner + one Q-table per operator | full ground state | environment reward + tR when the operator's termination condition holds |
 | `reprel_dfoci` | HTN planner + one Q-table per operator | D-FOCI projection, lifted to operator roles | same |
+| `hrl` | option-based HRL: 4 `reach(depot)` options + primitive pickup/dropoff under a tabular SMDP meta-controller, no planner | full ground state | options: env reward + bonus on reaching their depot; meta: env reward |
+
+`hrl` reconstructs the paper's option-based baseline from its description ("4 options for each
+location R, G, B, and Y"); all option tables are updated off-policy at every step. The paper's
+Taskable RL baseline is, in the released code, the RePReL loop without abstraction, i.e.
+`reprel_none`, so it is not run separately.
 
 ## 1. One passenger (`taxi_p1`, 500k steps)
 
@@ -26,8 +32,9 @@ Conditions:
 | flat | 160k | 1.00 | 27.9 +/- 0.1 |
 | reprel_none | 140k | 1.00 | 27.8 +/- 0.1 |
 | reprel_dfoci | 80k | 1.00 | 27.9 +/- 0.1 |
+| hrl | 180k | 1.00 | 27.9 +/- 0.1 |
 
-All three converge to the same policy quality; D-FOCI gets there about twice as fast. With a
+All conditions converge to the same policy quality; D-FOCI gets there about twice as fast. With a
 single passenger the planner's decomposition does not shrink the state: the full state already
 determines the phase, so `reprel_none` and `flat` learn over equally large tables and differ
 only by the terminal bonus. The expected ordering holds (dfoci > none >= flat) but the gap
@@ -42,6 +49,7 @@ between none and flat is small.
 | flat | not reached | 0.24 +/- 0.07 | -67.9 +/- 12.8 |
 | reprel_none | not reached | 0.25 +/- 0.10 | -71.0 +/- 17.9 |
 | reprel_dfoci | 80k | 1.00 | 55.7 +/- 0.1 |
+| hrl | not reached | 0.19 +/- 0.07 | -83.1 +/- 20.4 |
 
 The number of ground states grows about 20x; neither full-state learner solves the task in
 1.5M steps, while D-FOCI needs the same ~80k steps as for one passenger because its keys do not
@@ -57,6 +65,7 @@ anything between passengers.
 |---|---|---|---|
 | reprel_none | not reached | 0.00 | -395 +/- 52 |
 | reprel_dfoci | 120k | 1.00 | 81.3 +/- 4.1 |
+| hrl | not reached | 0.00 | -432 +/- 55 |
 
 ## 4. Transfer (`taxi_transfer`): train on 1 -> 2 passengers, then 3 -> 4 -> 5 without resetting the tables
 
@@ -108,7 +117,7 @@ and option-based HRL on tasks with 1, 2 and 3 passengers. What it shows and what
 | paper | here |
 |---|---|
 | RePReL reaches the optimal reward within roughly 20-30k steps on all three tasks | D-FOCI RePReL reaches 90% success at a median of 80k (1-2 passengers) and 120k (3 passengers) steps at alpha 0.1; 480k at the paper's 0.01 |
-| trl (planner, no abstraction) stays at the failure level for the whole 100k budget on every task | `reprel_none` learns the 1-passenger task by 140k steps and never learns 2 or 3 passengers within 1.5M |
+| trl (planner, no abstraction) and hrl (location options) stay at the failure level for the whole 100k budget on every task | `reprel_none` and `hrl` learn the 1-passenger task by 140-180k steps and never learn 2 or 3 passengers within 1.5M |
 | RePReL w/ T starts at the optimum on tasks 2 and 3 ("seamlessly without any additional learning") | zero-shot success 0.97 on 2, 1.00 on 3, 4 and 5 passengers after training on fewer |
 | no flat Q-learning baseline | `flat` tracks `reprel_none` throughout (1 passenger: 160k vs 140k steps; 2 passengers: both ~25% at 1.5M) |
 
